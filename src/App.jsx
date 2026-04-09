@@ -1,4 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+const MEDIAPIPE_WASM_ROOT = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm';
+const MEDIAPIPE_MODEL_ASSET_PATH =
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+
+const POSE_CONNECTIONS = [
+  [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
+  [11, 23], [12, 24], [23, 24], [23, 25], [25, 27],
+  [27, 29], [29, 31], [24, 26], [26, 28], [28, 30], [30, 32],
+];
 
 const shotBlueprints = [
   { x: -62, y: 34, clubSpeed: 103.4, faceAngle: -2.8, confidence: 94 },
@@ -17,19 +27,6 @@ const shotBlueprints = [
   { x: -70, y: -6, clubSpeed: 103.7, faceAngle: -3.2, confidence: 87 },
   { x: 6, y: -48, clubSpeed: 107.2, faceAngle: 0.4, confidence: 95 },
   { x: -12, y: 52, clubSpeed: 100.7, faceAngle: -0.8, confidence: 90 },
-];
-
-const hardwareStatus = [
-  {
-    label: 'Smart Club',
-    value: 'Disconnected',
-    detail: 'SPI sensor sync not wired yet.',
-  },
-  {
-    label: 'Vision Camera',
-    value: 'Disconnected',
-    detail: 'Camera processing not synced yet.',
-  },
 ];
 
 const createShot = (blueprint, index) => {
@@ -64,6 +61,23 @@ function App() {
   const [nextBlueprintIndex, setNextBlueprintIndex] = useState(0);
   const [showLogo, setShowLogo] = useState(true);
   const [showShotMenu, setShowShotMenu] = useState(false);
+  const [poseStatus, setPoseStatus] = useState('Loading pose model...');
+  const [poseModelReady, setPoseModelReady] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [poseCount, setPoseCount] = useState(0);
+  const [videoError, setVideoError] = useState('');
+  const [videoMetrics, setVideoMetrics] = useState({
+    fps: 0,
+    hipDrift: 0,
+    shoulderTilt: 0,
+  });
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const animationFrameRef = useRef(0);
+  const streamRef = useRef(null);
+  const poseLandmarkerRef = useRef(null);
+  const lastVideoTimeRef = useRef(-1);
+  const lastTimestampRef = useRef(0);
 
   const simulateDetection = () => {
     const blueprint = shotBlueprints[nextBlueprintIndex % shotBlueprints.length];
@@ -75,6 +89,200 @@ function App() {
   const resetSession = () => {
     setShots([]);
     setNextBlueprintIndex(0);
+  };
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const initializePoseLandmarker = async () => {
+      try {
+        const { FilesetResolver, PoseLandmarker } = await import('@mediapipe/tasks-vision');
+        const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_ROOT);
+
+        if (isCancelled) {
+          return;
+        }
+
+        poseLandmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: MEDIAPIPE_MODEL_ASSET_PATH,
+          },
+          runningMode: 'VIDEO',
+          numPoses: 1,
+          minPoseDetectionConfidence: 0.5,
+          minPosePresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        });
+
+        if (isCancelled) {
+          poseLandmarkerRef.current?.close();
+          return;
+        }
+
+        setPoseModelReady(true);
+        setPoseStatus('Pose model ready');
+      } catch (error) {
+        console.error(error);
+        setPoseStatus('Pose model failed to load');
+        setVideoError('Unable to initialize MediaPipe Pose Landmarker.');
+      }
+    };
+
+    initializePoseLandmarker();
+
+    return () => {
+      isCancelled = true;
+      cancelAnimationFrame(animationFrameRef.current);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      poseLandmarkerRef.current?.close();
+    };
+  }, []);
+
+  const drawPoseOverlay = (landmarks) => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+
+    if (!canvas || !video) {
+      return;
+    }
+
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      return;
+    }
+
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 360;
+    canvas.width = width;
+    canvas.height = height;
+
+    context.clearRect(0, 0, width, height);
+
+    if (!landmarks?.length) {
+      return;
+    }
+
+    context.save();
+    context.lineWidth = 3;
+    context.strokeStyle = 'rgba(122, 209, 255, 0.85)';
+    context.fillStyle = 'rgba(255, 209, 112, 0.95)';
+
+    for (const [startIndex, endIndex] of POSE_CONNECTIONS) {
+      const start = landmarks[startIndex];
+      const end = landmarks[endIndex];
+
+      if (!start || !end) {
+        continue;
+      }
+
+      context.beginPath();
+      context.moveTo(start.x * width, start.y * height);
+      context.lineTo(end.x * width, end.y * height);
+      context.stroke();
+    }
+
+    landmarks.forEach((landmark) => {
+      context.beginPath();
+      context.arc(landmark.x * width, landmark.y * height, 4, 0, Math.PI * 2);
+      context.fill();
+    });
+
+    context.restore();
+  };
+
+  const stopCamera = () => {
+    cancelAnimationFrame(animationFrameRef.current);
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    drawPoseOverlay([]);
+    setCameraActive(false);
+    setPoseCount(0);
+    setVideoMetrics({ fps: 0, hipDrift: 0, shoulderTilt: 0 });
+    setPoseStatus(poseModelReady ? 'Pose model ready' : 'Loading pose model...');
+  };
+
+  const runPoseLoop = () => {
+    const video = videoRef.current;
+    const poseLandmarker = poseLandmarkerRef.current;
+
+    if (!video || !poseLandmarker) {
+      return;
+    }
+
+    if (video.readyState >= 2 && video.currentTime !== lastVideoTimeRef.current) {
+      lastVideoTimeRef.current = video.currentTime;
+      const timestamp = performance.now();
+      const result = poseLandmarker.detectForVideo(video, timestamp);
+      const landmarks = result.landmarks?.[0] ?? [];
+
+      setPoseCount(result.landmarks?.length ?? 0);
+      drawPoseOverlay(landmarks);
+
+      if (landmarks.length >= 25) {
+        const leftShoulder = landmarks[11];
+        const rightShoulder = landmarks[12];
+        const leftHip = landmarks[23];
+        const rightHip = landmarks[24];
+        const shoulderTilt = Math.atan2(
+          (rightShoulder?.y ?? 0) - (leftShoulder?.y ?? 0),
+          (rightShoulder?.x ?? 0) - (leftShoulder?.x ?? 1)
+        ) * (180 / Math.PI);
+        const hipCenterX = (((leftHip?.x ?? 0) + (rightHip?.x ?? 0)) / 2) - 0.5;
+        const elapsed = lastTimestampRef.current ? timestamp - lastTimestampRef.current : 0;
+        lastTimestampRef.current = timestamp;
+
+        setVideoMetrics({
+          fps: elapsed > 0 ? Math.round(1000 / elapsed) : videoMetrics.fps,
+          hipDrift: Number((hipCenterX * 100).toFixed(1)),
+          shoulderTilt: Number(shoulderTilt.toFixed(1)),
+        });
+      }
+
+      result.close();
+    }
+
+    animationFrameRef.current = requestAnimationFrame(runPoseLoop);
+  };
+
+  const startCamera = async () => {
+    if (!poseModelReady) {
+      return;
+    }
+
+    try {
+      setVideoError('');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width: { ideal: 960 },
+          height: { ideal: 540 },
+        },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      setCameraActive(true);
+      setPoseStatus('Camera live');
+      lastVideoTimeRef.current = -1;
+      lastTimestampRef.current = 0;
+      animationFrameRef.current = requestAnimationFrame(runPoseLoop);
+    } catch (error) {
+      console.error(error);
+      setVideoError('Camera access was denied or unavailable.');
+      setPoseStatus('Camera unavailable');
+    }
   };
 
   const totalShots = shots.length;
@@ -134,6 +342,12 @@ function App() {
         )}
 
         <div className="header-actions">
+          <article className="top-status-card">
+            <span>Smart Club</span>
+            <strong>Disconnected</strong>
+            <p>SPI sensor sync not wired yet.</p>
+          </article>
+
           <button className="primary-button" onClick={simulateDetection}>
             Simulate Detect
           </button>
@@ -189,106 +403,155 @@ function App() {
             <span>Heel side</span>
           </div>
           <p className="legend-note">More saturated color means a stronger impact miss away from center.</p>
+
+          <div className="impact-lower-grid">
+            <div className="impact-lower-main">
+              <section className="panel compact-panel metrics-panel inline-metrics-panel">
+                <div className="metrics-summary-row">
+                  <div className="score-block">
+                    <span>Consistency score</span>
+                    <strong>{consistencyScore}</strong>
+                    <p>Strike clustering and face-angle stability.</p>
+                  </div>
+
+                  <div className="latest-card">
+                    <span>Latest swing</span>
+                    <strong>{latestShot ? latestShot.bias : 'No shots yet'}</strong>
+                    <p>
+                      {latestShot
+                        ? `Shot ${latestShot.index} on ${latestShot.side.toLowerCase()} at ${Math.round(latestShot.intensity * 100)}% intensity.`
+                        : 'Waiting for backswing-triggered capture.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="metrics-grid">
+                  <article>
+                    <span>Total shots</span>
+                    <strong>{totalShots}</strong>
+                  </article>
+                  <article>
+                    <span>Center hits</span>
+                    <strong>{centerRate}%</strong>
+                  </article>
+                  <article>
+                    <span>Avg club speed</span>
+                    <strong>{averageSpeed} mph</strong>
+                  </article>
+                  <article>
+                    <span>Avg offset</span>
+                    <strong>{averageOffset} px</strong>
+                  </article>
+                </div>
+              </section>
+
+              <article className="footer-card consistency-info-card">
+                <span>Consistency score</span>
+                <p>Session average based on strike clustering and face-angle steadiness.</p>
+              </article>
+            </div>
+
+            <div className="impact-side-cards">
+              <article className="footer-card flight-bias-card">
+                <span>Flight and bias</span>
+                <div className="bias-definition-list">
+                  <article className="bias-definition-item">
+                    <strong>Fade Bias (Face Open)</strong>
+                    <p>
+                      Club face angled away from the golfer at impact, usually producing a left-to-right
+                      ball flight for a right-handed player.
+                    </p>
+                  </article>
+                  <article className="bias-definition-item">
+                    <strong>Draw Bias (Face Closed)</strong>
+                    <p>
+                      Club face angled toward the golfer at impact, usually producing a right-to-left
+                      ball flight for a right-handed player.
+                    </p>
+                  </article>
+                </div>
+              </article>
+
+              <article className="footer-card footer-log">
+                <div className="footer-log-header">
+                  <span>Recent swings</span>
+                  <button
+                    className="tertiary-button"
+                    onClick={() => setShowShotMenu(true)}
+                    disabled={shots.length === 0}
+                  >
+                    View all
+                  </button>
+                </div>
+                <div className="recent-list">
+                  {shots.length === 0 && <p>No swings detected yet.</p>}
+                  {shots.slice(-3).reverse().map((shot) => (
+                    <div className="recent-item" key={`${shot.id}-recent`}>
+                      <strong>Shot {shot.index}</strong>
+                      <span>{shot.bias}</span>
+                      <span>{shot.side}</span>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            </div>
+          </div>
         </section>
 
         <aside className="metrics-column">
-          <section className="panel compact-panel status-panel">
-            <div className="status-grid">
-              {hardwareStatus.map((item) => (
-                <article className="status-card" key={item.label}>
-                  <p>{item.label}</p>
-                  <strong>{item.value}</strong>
-                  <span>{item.detail}</span>
-                </article>
-              ))}
+          <section className="panel compact-panel video-panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Visual Processing</p>
+                <h2>Live pose capture</h2>
+              </div>
+              <span className="badge">{poseStatus}</span>
             </div>
+
+            <div className="video-stage">
+              <video className="pose-video" ref={videoRef} autoPlay muted playsInline />
+              <canvas className="pose-canvas" ref={canvasRef} />
+              {!cameraActive && (
+                <div className="video-empty">
+                  <strong>Camera preview</strong>
+                  <p>MediaPipe Pose Landmarker overlay will appear here once the camera is enabled.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="video-actions">
+              <button className="primary-button" onClick={cameraActive ? stopCamera : startCamera} disabled={!poseModelReady && !cameraActive}>
+                {cameraActive ? 'Stop Camera' : 'Start Camera'}
+              </button>
+            </div>
+
+            <div className="video-stats">
+              <article>
+                <span>Model</span>
+                <strong>{poseModelReady ? 'Pose ready' : 'Loading...'}</strong>
+              </article>
+              <article>
+                <span>Poses tracked</span>
+                <strong>{poseCount}</strong>
+              </article>
+              <article>
+                <span>FPS</span>
+                <strong>{videoMetrics.fps}</strong>
+              </article>
+              <article>
+                <span>Hip drift</span>
+                <strong>{videoMetrics.hipDrift}%</strong>
+              </article>
+              <article>
+                <span>Shoulder tilt</span>
+                <strong>{videoMetrics.shoulderTilt} deg</strong>
+              </article>
+            </div>
+            {videoError && <p className="video-error">{videoError}</p>}
           </section>
 
-          <section className="panel compact-panel metrics-panel">
-            <div className="metrics-top">
-              <div className="score-block">
-                <span>Consistency score</span>
-                <strong>{consistencyScore}</strong>
-                <p>
-                  Combines strike dispersion and face-angle stability. Higher means tighter contact
-                  and less face variation.
-                </p>
-              </div>
-
-              <div className="latest-card">
-                <span>Latest swing</span>
-                <strong>{latestShot ? latestShot.bias : 'No shots yet'}</strong>
-                <p>
-                  {latestShot
-                    ? `Shot ${latestShot.index} hit ${latestShot.side.toLowerCase()} with ${Math.round(latestShot.intensity * 100)}% intensity.`
-                    : 'The dashboard will populate once backswing-triggered capture begins.'}
-                </p>
-              </div>
-            </div>
-
-            <div className="metrics-grid">
-              <article>
-                <span>Total shots</span>
-                <strong>{totalShots}</strong>
-              </article>
-              <article>
-                <span>Center hits</span>
-                <strong>{centerRate}%</strong>
-              </article>
-              <article>
-                <span>Avg club speed</span>
-                <strong>{averageSpeed} mph</strong>
-              </article>
-              <article>
-                <span>Avg offset</span>
-                <strong>{averageOffset} px</strong>
-              </article>
-            </div>
-          </section>
         </aside>
       </main>
-
-      <footer className="footer-strip">
-        <article className="footer-card">
-          <span>Consistency score</span>
-          <p>Session average based on strike clustering and face-angle steadiness.</p>
-        </article>
-        <article className="footer-card">
-          <span>Flight and bias</span>
-          <p>
-            <strong>Fade Bias (Face Open):</strong> This occurs when the club face is angled away
-            from the golfer (pointing right for a right-handed player) at impact. This typically
-            results in a ball flight that curves from left to right.
-          </p>
-          <p>
-            <strong>Draw Bias (Face Closed):</strong> This occurs when the club face is angled
-            toward the golfer (pointing left for a right-handed player) at impact. This typically
-            results in a ball flight that curves from right to left.
-          </p>
-        </article>
-        <article className="footer-card footer-log">
-          <div className="footer-log-header">
-            <span>Recent swings</span>
-            <button
-              className="tertiary-button"
-              onClick={() => setShowShotMenu(true)}
-              disabled={shots.length === 0}
-            >
-              View all
-            </button>
-          </div>
-          <div className="recent-list">
-            {shots.length === 0 && <p>No swings detected yet.</p>}
-            {shots.slice(-3).reverse().map((shot) => (
-              <div className="recent-item" key={`${shot.id}-recent`}>
-                <strong>Shot {shot.index}</strong>
-                <span>{shot.bias}</span>
-                <span>{shot.side}</span>
-              </div>
-            ))}
-          </div>
-        </article>
-      </footer>
 
       {showShotMenu && (
         <div className="menu-overlay" onClick={() => setShowShotMenu(false)}>

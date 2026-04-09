@@ -2,6 +2,7 @@
 @import "tailwindcss";
 
 :root {
+  --desktop-scale: 0.67;
   color: #eef4fb;
   background: linear-gradient(180deg, #08111a 0%, #102132 100%);
   font-family: 'IBM Plex Sans', sans-serif;
@@ -30,11 +31,14 @@ button {
 }
 
 .app-shell {
-  min-height: 100vh;
+  width: calc(100% / var(--desktop-scale));
+  min-height: calc(100vh / var(--desktop-scale));
   padding: 18px;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
   gap: 14px;
+  transform: scale(var(--desktop-scale));
+  transform-origin: top left;
 }
 
 .topbar,
@@ -50,15 +54,15 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
+  gap: 12px;
+  padding: 8px 12px 8px 0;
   border-radius: 22px;
 }
 
 .brand-logo {
   display: block;
-  width: min(100%, 520px);
-  max-height: 92px;
+  width: min(100%, 420px);
+  max-height: 58px;
   object-fit: contain;
 }
 
@@ -67,6 +71,49 @@ button {
   gap: 10px;
   flex-wrap: wrap;
   margin-left: auto;
+  align-items: center;
+}
+
+.top-status-card,
+.video-stats article,
+.score-block,
+.latest-card,
+.metrics-grid article {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.top-status-card {
+  min-width: 160px;
+  padding: 8px 10px;
+  border-radius: 16px;
+}
+
+.top-status-card span,
+.video-stats span,
+.score-block span,
+.latest-card span,
+.metrics-grid span,
+.footer-card span {
+  color: rgba(238, 244, 251, 0.64);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.top-status-card strong {
+  display: block;
+  margin: 4px 0;
+  font-family: 'Space Grotesk', sans-serif;
+  color: #ff8a8a;
+  font-size: 1.05rem;
+}
+
+.top-status-card p {
+  margin: 0;
+  color: rgba(238, 244, 251, 0.76);
+  font-size: 0.88rem;
+  line-height: 1.3;
 }
 
 .primary-button,
@@ -96,25 +143,36 @@ button {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.9fr);
-  gap: 14px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(350px, 0.95fr);
+  gap: 12px;
   min-height: 0;
 }
 
 .metrics-column {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   min-height: 0;
+  grid-template-rows: auto auto;
+}
+
+.video-panel {
+  display: grid;
+  gap: 10px;
 }
 
 .panel {
   border-radius: 22px;
-  padding: 18px;
+  padding: 14px;
   min-height: 0;
 }
 
+.heatmap-panel {
+  display: grid;
+  align-content: start;
+}
+
 .compact-panel {
-  padding: 14px;
+  padding: 12px;
 }
 
 .panel-header {
@@ -122,7 +180,7 @@ button {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .eyebrow {
@@ -146,7 +204,7 @@ button {
 
 .panel h2 {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.15rem;
 }
 
 .badge {
@@ -161,14 +219,94 @@ button {
 
 .club-face-wrap {
   position: relative;
-  padding-top: 16px;
+  padding-top: 10px;
+}
+
+.video-stage {
+  position: relative;
+  aspect-ratio: 16 / 8.7;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(21, 39, 56, 0.92), rgba(9, 18, 28, 0.96));
+}
+
+.pose-video,
+.pose-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pose-video {
+  transform: scaleX(-1);
+  opacity: 0.92;
+}
+
+.pose-canvas {
+  pointer-events: none;
+  transform: scaleX(-1);
+}
+
+.video-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 18px;
+  text-align: center;
+  background: rgba(5, 11, 18, 0.34);
+}
+
+.video-empty strong {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.1rem;
+}
+
+.video-empty p,
+.video-note,
+.video-error {
+  margin: 0;
+  color: rgba(238, 244, 251, 0.74);
+  line-height: 1.45;
+}
+
+.video-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.video-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.video-stats article {
+  padding: 11px;
+  border-radius: 14px;
+}
+
+.video-stats strong {
+  display: block;
+  margin-top: 5px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.98rem;
+}
+
+.video-error {
+  color: #ff8a8a;
 }
 
 .club-face {
   position: relative;
-  margin: 8px auto 0;
-  width: min(100%, 620px);
-  aspect-ratio: 1.7 / 1;
+  margin: 4px auto 0;
+  width: min(100%, 445px);
+  aspect-ratio: 1.55 / 1;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background:
@@ -221,7 +359,7 @@ button {
 
 .empty-state {
   position: absolute;
-  top: 0;
+  top: -18px;
   left: 50%;
   transform: translateX(-50%);
   color: rgba(238, 244, 251, 0.72);
@@ -247,7 +385,7 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 10px;
   color: rgba(238, 244, 251, 0.74);
   font-size: 0.88rem;
 }
@@ -260,15 +398,31 @@ button {
 }
 
 .legend-note {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: rgba(238, 244, 251, 0.64);
-  font-size: 0.9rem;
-  line-height: 1.45;
+  font-size: 0.84rem;
+  line-height: 1.35;
 }
 
-.status-grid {
+.impact-lower-grid {
   display: grid;
-  gap: 10px;
+  grid-template-columns: minmax(360px, 1.1fr) minmax(300px, 0.82fr);
+  gap: 14px;
+  margin-top: 14px;
+  align-items: start;
+}
+
+.impact-lower-main,
+.impact-side-cards {
+  display: grid;
+  gap: 14px;
+}
+
+.inline-metrics-panel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .status-card,
@@ -292,17 +446,6 @@ button {
   margin: 0;
 }
 
-.status-card p,
-.score-block span,
-.latest-card span,
-.metrics-grid span,
-.footer-card span {
-  color: rgba(238, 244, 251, 0.64);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .status-card strong {
   display: block;
   margin: 5px 0;
@@ -321,54 +464,40 @@ button {
   line-height: 1.4;
 }
 
-.metrics-top {
+.metrics-summary-row {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-
-.score-block,
-.latest-card,
-.metrics-grid article {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 14px;
+  grid-template-columns: 1.02fr 0.98fr;
+  gap: 8px;
 }
 
 .score-block strong {
   display: block;
   margin: 6px 0 4px;
-  font-size: 3.2rem;
+  font-size: 2.35rem;
   line-height: 1;
 }
 
 .latest-card strong {
   display: block;
   margin: 6px 0 4px;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
 }
 
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .metrics-grid article {
-  padding: 13px;
+  padding: 11px;
 }
 
 .metrics-grid strong {
   display: block;
-  margin-top: 6px;
-  font-size: 1.05rem;
-}
-
-.footer-strip {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1.15fr;
-  gap: 14px;
+  margin-top: 5px;
+  font-size: 1rem;
 }
 
 .footer-card {
@@ -377,6 +506,24 @@ button {
 
 .footer-card strong {
   color: #eef4fb;
+}
+
+.bias-definition-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.bias-definition-item {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bias-definition-item strong {
+  display: block;
+  margin-bottom: 6px;
 }
 
 .footer-log-header {
@@ -390,6 +537,7 @@ button {
 .footer-log {
   display: grid;
   gap: 10px;
+  align-content: start;
 }
 
 .tertiary-button {
@@ -550,8 +698,15 @@ button {
 }
 
 @media (max-width: 1100px) {
+  :root {
+    --desktop-scale: 1;
+  }
+
   .app-shell {
+    width: 100%;
+    min-height: 100vh;
     grid-template-rows: auto auto auto;
+    transform: none;
   }
 
   .topbar,
@@ -562,10 +717,11 @@ button {
   }
 
   .dashboard-grid,
-  .footer-strip {
+  .impact-lower-grid {
     grid-template-columns: 1fr;
   }
 
+  .metrics-summary-row,
   .shot-menu-chart-panel {
     grid-template-columns: 1fr;
   }
@@ -581,9 +737,14 @@ button {
   }
 
   .header-actions,
-  .metrics-grid {
+  .metrics-grid,
+  .video-stats {
     width: 100%;
     grid-template-columns: 1fr;
+  }
+
+  .top-status-card {
+    width: 100%;
   }
 
   .primary-button,
@@ -597,7 +758,7 @@ button {
   }
 
   .empty-state {
-    top: 2px;
+    top: -10px;
     font-size: 0.82rem;
   }
 
