@@ -1,14 +1,22 @@
 import { useState } from 'react';
 
 const shotBlueprints = [
-  { x: -34, y: 18, clubSpeed: 103.4, faceAngle: -1.4, confidence: 94 },
-  { x: 12, y: -10, clubSpeed: 105.1, faceAngle: 0.2, confidence: 97 },
-  { x: 26, y: 16, clubSpeed: 101.6, faceAngle: 1.6, confidence: 89 },
-  { x: -8, y: -14, clubSpeed: 106.8, faceAngle: -0.6, confidence: 96 },
-  { x: 6, y: 4, clubSpeed: 107.5, faceAngle: 0.1, confidence: 98 },
-  { x: -20, y: 9, clubSpeed: 102.3, faceAngle: -1.1, confidence: 92 },
-  { x: 30, y: -18, clubSpeed: 100.2, faceAngle: 2.1, confidence: 86 },
-  { x: -4, y: 2, clubSpeed: 108.1, faceAngle: 0.0, confidence: 99 },
+  { x: -62, y: 34, clubSpeed: 103.4, faceAngle: -2.8, confidence: 94 },
+  { x: 24, y: -20, clubSpeed: 105.1, faceAngle: 0.8, confidence: 97 },
+  { x: 54, y: 30, clubSpeed: 101.6, faceAngle: 3.1, confidence: 89 },
+  { x: -22, y: -34, clubSpeed: 106.8, faceAngle: -1.2, confidence: 96 },
+  { x: 12, y: 10, clubSpeed: 107.5, faceAngle: 0.2, confidence: 98 },
+  { x: -38, y: 18, clubSpeed: 102.3, faceAngle: -2.1, confidence: 92 },
+  { x: 60, y: -36, clubSpeed: 100.2, faceAngle: 3.5, confidence: 86 },
+  { x: -8, y: 6, clubSpeed: 108.1, faceAngle: -0.1, confidence: 99 },
+  { x: 36, y: -42, clubSpeed: 99.6, faceAngle: 2.4, confidence: 85 },
+  { x: -56, y: -18, clubSpeed: 104.9, faceAngle: -2.9, confidence: 91 },
+  { x: 10, y: 26, clubSpeed: 109.4, faceAngle: 0.5, confidence: 96 },
+  { x: -30, y: 40, clubSpeed: 101.1, faceAngle: -1.7, confidence: 88 },
+  { x: 68, y: 8, clubSpeed: 98.8, faceAngle: 3.7, confidence: 84 },
+  { x: -70, y: -6, clubSpeed: 103.7, faceAngle: -3.2, confidence: 87 },
+  { x: 6, y: -48, clubSpeed: 107.2, faceAngle: 0.4, confidence: 95 },
+  { x: -12, y: 52, clubSpeed: 100.7, faceAngle: -0.8, confidence: 90 },
 ];
 
 const hardwareStatus = [
@@ -82,6 +90,36 @@ function App() {
   const consistencyScore = totalShots > 0
     ? Math.round(shots.reduce((sum, shot) => sum + shot.score, 0) / totalShots)
     : 0;
+  const biasCounts = shots.reduce(
+    (counts, shot) => {
+      counts[shot.bias] += 1;
+      return counts;
+    },
+    {
+      'Fade bias': 0,
+      'Draw bias': 0,
+      'Neutral flight': 0,
+    }
+  );
+  const pieSegments = [
+    { label: 'Fade bias', count: biasCounts['Fade bias'], color: '#ff8d56' },
+    { label: 'Draw bias', count: biasCounts['Draw bias'], color: '#68c5ff' },
+    { label: 'Neutral flight', count: biasCounts['Neutral flight'], color: '#ffe08d' },
+  ];
+  const pieGradient = totalShots > 0
+    ? (() => {
+        let runningPercent = 0;
+        const segments = pieSegments
+          .filter((segment) => segment.count > 0)
+          .map((segment) => {
+            const start = runningPercent;
+            runningPercent += (segment.count / totalShots) * 100;
+            return `${segment.color} ${start}% ${runningPercent}%`;
+          });
+
+        return `conic-gradient(${segments.join(', ')})`;
+      })()
+    : 'conic-gradient(rgba(255,255,255,0.1) 0% 100%)';
 
   return (
     <div className="app-shell">
@@ -128,24 +166,27 @@ function App() {
                 <div
                   key={shot.id}
                   className="impact-point"
-                  style={{
-                    left: `calc(50% + ${shot.x * 1.7}px)`,
-                    top: `calc(50% + ${shot.y * 1.7}px)`,
-                    '--impact-size': `${40 + shot.confidence * 0.5}px`,
-                    '--impact-glow': shot.x >= 0
-                      ? `hsla(${29 - shot.intensity * 22} 100% ${62 - shot.intensity * 20}% / ${0.44 + shot.intensity * 0.42})`
-                      : `hsla(${206 - shot.intensity * 18} 96% ${64 - shot.intensity * 18}% / ${0.44 + shot.intensity * 0.42})`,
-                  }}
-                  title={`Shot ${shot.index}: ${shot.side}, ${shot.bias}`}
-                />
+                style={{
+                  left: `calc(50% + ${shot.x * 1.7}px)`,
+                  top: `calc(50% + ${shot.y * 1.7}px)`,
+                  '--impact-size': `${52 + shot.confidence * 0.62}px`,
+                  '--impact-core': shot.x >= 0
+                    ? `hsla(${18 - shot.intensity * 10} 100% ${76 - shot.intensity * 16}% / ${0.78 + shot.intensity * 0.18})`
+                    : `hsla(${198 - shot.intensity * 14} 100% ${78 - shot.intensity * 16}% / ${0.78 + shot.intensity * 0.18})`,
+                  '--impact-glow': shot.x >= 0
+                    ? `hsla(${24 - shot.intensity * 16} 100% ${58 - shot.intensity * 14}% / ${0.42 + shot.intensity * 0.26})`
+                    : `hsla(${202 - shot.intensity * 14} 100% ${60 - shot.intensity * 14}% / ${0.42 + shot.intensity * 0.26})`,
+                }}
+                title={`Shot ${shot.index}: ${shot.side}, ${shot.bias}`}
+              />
               ))}
             </div>
           </div>
 
           <div className="legend-row">
-            <span>Heel side</span>
-            <div className="legend-bar" />
             <span>Toe side</span>
+            <div className="legend-bar" />
+            <span>Heel side</span>
           </div>
           <p className="legend-note">More saturated color means a stronger impact miss away from center.</p>
         </section>
@@ -260,6 +301,27 @@ function App() {
               <button className="secondary-button" onClick={() => setShowShotMenu(false)}>
                 Close
               </button>
+            </div>
+
+            <div className="shot-menu-chart-panel">
+              <div className="bias-chart-block">
+                <div className="bias-pie-chart" style={{ background: pieGradient }}>
+                  <div className="bias-pie-hole">
+                    <strong>{totalShots}</strong>
+                    <span>shots</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bias-legend">
+                {pieSegments.map((segment) => (
+                  <div className="bias-legend-item" key={segment.label}>
+                    <span className="bias-swatch" style={{ background: segment.color }} />
+                    <span>{segment.label}</span>
+                    <strong>{segment.count}</strong>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="shot-menu-list">

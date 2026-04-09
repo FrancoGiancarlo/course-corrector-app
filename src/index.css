@@ -234,10 +234,13 @@ button {
   position: absolute;
   width: var(--impact-size);
   height: var(--impact-size);
-  border-radius: 50%;
+  border-radius: 34%;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle, var(--impact-glow) 0%, rgba(255, 255, 255, 0.04) 52%, transparent 74%);
-  mix-blend-mode: screen;
+  background:
+    radial-gradient(circle, var(--impact-core) 0%, var(--impact-glow) 40%, rgba(255, 255, 255, 0.02) 62%, transparent 76%);
+  mix-blend-mode: plus-lighter;
+  filter: saturate(1.1);
+  opacity: 0.95;
 }
 
 .legend-row {
@@ -454,6 +457,79 @@ button {
   gap: 10px;
 }
 
+.shot-menu-chart-panel {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.bias-chart-block {
+  display: grid;
+  place-items: center;
+}
+
+.bias-pie-chart {
+  display: grid;
+  place-items: center;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+}
+
+.bias-pie-hole {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: rgba(8, 18, 30, 0.96);
+  text-align: center;
+}
+
+.bias-pie-hole strong {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.bias-pie-hole span {
+  color: rgba(238, 244, 251, 0.64);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.bias-legend {
+  display: grid;
+  gap: 10px;
+}
+
+.bias-legend-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.bias-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.bias-legend-item strong {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
 .shot-menu-item {
   display: flex;
   align-items: center;
@@ -487,6 +563,10 @@ button {
 
   .dashboard-grid,
   .footer-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .shot-menu-chart-panel {
     grid-template-columns: 1fr;
   }
 
@@ -525,6 +605,11 @@ button {
   .shot-menu-item {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .bias-pie-chart {
+    width: 132px;
+    height: 132px;
   }
 
   .shot-menu-metrics {
