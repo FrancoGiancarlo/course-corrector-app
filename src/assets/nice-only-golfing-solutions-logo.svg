@@ -1,0 +1,20 @@
+<svg width="1024" height="272" viewBox="0 0 1024 272" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="272" fill="transparent"/>
+  <g transform="translate(10 12)">
+    <circle cx="118" cy="118" r="116" fill="#BEE4FF" stroke="#1B2B2D" stroke-width="4"/>
+    <path d="M4 170C32 158 61 152 92 152C124 152 153 158 182 170C209 181 230 197 246 218V236H4V170Z" fill="#9BCB69"/>
+    <path d="M4 216C28 206 54 201 83 201C120 201 155 210 190 228V236H4V216Z" fill="#6C8D38"/>
+    <path d="M104 201C120 201 133 188 133 172C133 156 120 143 104 143C88 143 75 156 75 172C75 188 88 201 104 201Z" fill="white" opacity="0.95"/>
+    <path d="M118 22V201" stroke="#D8A300" stroke-width="4"/>
+    <path d="M118 22V238" stroke="#1F2A2D" stroke-width="2" stroke-dasharray="8 10" opacity="0.8"/>
+    <path d="M118 24L160 36L146 70L118 64V24Z" fill="#F1443C" stroke="#8A1717" stroke-width="3"/>
+    <path d="M6 118H230" stroke="#5E7D91" stroke-width="3" stroke-dasharray="4 12"/>
+    <path d="M118 8V228" stroke="#5E7D91" stroke-width="3" stroke-dasharray="4 12"/>
+  </g>
+  <g fill="#C51612" font-family="Georgia, 'Times New Roman', serif" font-weight="700">
+    <text x="274" y="110" font-size="96">Nice</text>
+    <text x="560" y="110" font-size="96">Only</text>
+    <text x="274" y="212" font-size="96">Golfing</text>
+    <text x="660" y="212" font-size="96">Solutions</text>
+  </g>
+</svg>
