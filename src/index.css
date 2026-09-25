@@ -91,15 +91,16 @@ small { font-size: .7em; color: var(--muted); font-weight: 400; }
 .impact-visual { flex: 1; min-height: 140px; position: relative; display: grid; place-items: center; overflow: hidden; border-radius: 8px; background: radial-gradient(ellipse at center, #20303b44, transparent 65%), #0e1720; }
 .map-grid { position: absolute; inset: 0; background-image: linear-gradient(#5870800b 1px, transparent 1px), linear-gradient(90deg, #5870800b 1px, transparent 1px); background-size: 28px 28px; }
 .club-face-wrap { position: absolute; inset: 28px 10px 25px; }
-.club-face { display: block; width: 100%; height: 100%; filter: drop-shadow(0 10px 12px #0005); }
+/* Mirror the face and strikes together: a right-handed face has its heel on the right. */
+.club-face { display: block; width: 100%; height: 100%; transform: scaleX(-1); filter: drop-shadow(0 10px 12px #0005); }
 .map-direction { position: absolute; top: 12px; font-size: 9px; letter-spacing: 2px; color: #718697; }
-.map-heel { left: 14px; }
-.map-toe { right: 14px; }
+.map-heel { right: 14px; }
+.map-toe { left: 14px; }
 .map-caption { position: absolute; top: 10px; left: 65px; right: 65px; text-align: center; color: #8ea1b0; font-size: 10px; }
 .impact-point { mix-blend-mode: screen; }
 .legend-row { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-size: 10px; }
 .impact-visual .legend-row { position: absolute; bottom: 10px; left: 0; right: 0; }
-.legend-bar { height: 4px; width: 130px; border-radius: 4px; background: linear-gradient(90deg, #68c5ff, #d9e8de 48%, #ff8d56); }
+.legend-bar { height: 4px; width: 130px; border-radius: 4px; background: linear-gradient(90deg, #ff8d56, #d9e8de 48%, #68c5ff); }
 .latest-strike { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--border); padding-top: 11px; min-height: 44px; }
 .latest-indicator { display: grid; place-items: center; width: 30px; height: 30px; color: var(--mint); background: #213730; border-radius: 7px; flex-shrink: 0; }
 .latest-strike strong { display: block; font-size: 12px; font-weight: 500; margin-top: 2px; }

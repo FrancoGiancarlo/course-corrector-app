@@ -231,7 +231,7 @@ function App() {
             <span className="map-direction map-heel">HEEL</span>
             <span className="map-direction map-toe">TOE</span>
             <div className="club-face-wrap">
-              <svg className="club-face" viewBox="0 0 520 280" role="img" aria-label={`Driver club face with ${totalShots} simulated strikes`}>
+              <svg className="club-face" viewBox="0 0 520 280" role="img" aria-label={`Right-handed driver club face with ${totalShots} simulated strikes`}>
                 <defs>
                   <linearGradient id="driver-metal" x1="0" y1="0" x2="0.2" y2="1">
                     <stop offset="0" stopColor="#71828b" /><stop offset="0.12" stopColor="#354b59" />
@@ -266,7 +266,7 @@ function App() {
               </svg>
             </div>
             <div className="map-caption">{totalShots ? `${totalShots} strikes mapped` : 'Waiting for swing'}</div>
-            <div className="legend-row"><span>Heel side</span><div className="legend-bar" /><span>Toe side</span></div>
+            <div className="legend-row"><span>Toe side</span><div className="legend-bar" /><span>Heel side</span></div>
           </div>
         </section>
 
