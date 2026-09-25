@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { CHECKING_FRAMING, WAITING_FOR_FRAMES, createFramingMonitor } from './poseFraming';
 
 const MEDIAPIPE_WASM_ROOT =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
@@ -62,6 +63,7 @@ export function usePoseCamera() {
   const [selectedCamera, setSelectedCamera] = useState('');
   const [poseCount, setPoseCount] = useState(0);
   const [videoMetrics, setVideoMetrics] = useState(EMPTY_METRICS);
+  const [bodyFraming, setBodyFraming] = useState(CHECKING_FRAMING);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,8 +115,19 @@ export function usePoseCamera() {
     let frameId;
     let lastVideoTime = -1;
     let lastTimestamp = 0;
+    const checkFraming = createFramingMonitor();
+    let reportedFraming = null;
+    const reportFraming = (framing) => {
+      if (framing !== reportedFraming) {
+        reportedFraming = framing;
+        setBodyFraming(framing);
+      }
+    };
     const runPoseLoop = () => {
       if (session.cancelled) return;
+      if (lastTimestamp && performance.now() - lastTimestamp > 1500) {
+        reportFraming(WAITING_FOR_FRAMES);
+      }
       if (!video.paused && video.readyState >= 2 && video.videoWidth > 0 &&
           video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;
@@ -123,6 +136,7 @@ export function usePoseCamera() {
         try {
           result = landmarker.detectForVideo(video, timestamp);
           const landmarks = result.landmarks?.[0] ?? [];
+          reportFraming(checkFraming(landmarks, timestamp));
           setPoseCount(result.landmarks?.length ?? 0);
           drawPose(canvas, video, landmarks);
           const elapsed = lastTimestamp ? timestamp - lastTimestamp : 0;
@@ -172,6 +186,7 @@ export function usePoseCamera() {
     setPoseCount(0);
     setVideoMetrics(EMPTY_METRICS);
     setCameraDetails(null);
+    setBodyFraming(CHECKING_FRAMING);
   };
 
   const startCamera = async () => {
@@ -266,6 +281,7 @@ export function usePoseCamera() {
         if (session.cancelled || session.playPending) return;
         session.playPending = true;
         session.playState = 'Pending';
+        setBodyFraming(CHECKING_FRAMING);
         setCameraStatus('starting');
         setCameraError('');
         watchPlayback();
@@ -328,6 +344,7 @@ export function usePoseCamera() {
     videoRef, canvasRef, cameraActive, cameraPending, cameraConnected,
     cameraStatus, modelStatus, poseStatus, poseCount, videoMetrics,
     cameraDetails, cameras, selectedCamera, setSelectedCamera,
+    bodyFraming: cameraActive && modelStatus === 'ready' && !trackingError ? bodyFraming : null,
     videoError: [cameraError, modelError, trackingError].filter(Boolean).join(' '),
     startCamera, stopCamera, resumeCamera,
   };

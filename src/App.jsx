@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePoseCamera } from './usePoseCamera';
 
 const shotBlueprints = [
@@ -52,12 +52,72 @@ function App() {
   const [nextBlueprintIndex, setNextBlueprintIndex] = useState(0);
   const [showLogo, setShowLogo] = useState(true);
   const [showShotMenu, setShowShotMenu] = useState(false);
+  const previewPanelRef = useRef(null);
+  const fullscreenButtonRef = useRef(null);
+  const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
+  const [fullscreenBusy, setFullscreenBusy] = useState(false);
+  const [fullscreenError, setFullscreenError] = useState('');
   const {
     videoRef, canvasRef, cameraActive, cameraPending, cameraConnected,
     cameraStatus, modelStatus, poseStatus, poseCount, videoMetrics, videoError,
-    cameraDetails, cameras, selectedCamera, setSelectedCamera,
+    cameraDetails, cameras, selectedCamera, setSelectedCamera, bodyFraming,
     startCamera, stopCamera, resumeCamera,
   } = usePoseCamera();
+
+  useEffect(() => {
+    let wasPreviewFullscreen = false;
+    const syncFullscreen = () => {
+      const isFullscreen = document.fullscreenElement === previewPanelRef.current;
+      setIsPreviewFullscreen(isFullscreen);
+      if (wasPreviewFullscreen && !isFullscreen) {
+        fullscreenButtonRef.current?.focus({ preventScroll: true });
+      }
+      wasPreviewFullscreen = isFullscreen;
+    };
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, []);
+
+  const togglePreviewFullscreen = async () => {
+    setFullscreenError('');
+    setFullscreenBusy(true);
+    try {
+      if (document.fullscreenElement === previewPanelRef.current) {
+        await document.exitFullscreen();
+      } else if (previewPanelRef.current?.requestFullscreen && document.fullscreenEnabled) {
+        // Expand the whole panel so the canvas and guidance stay with the video.
+        await previewPanelRef.current.requestFullscreen();
+      } else {
+        setFullscreenError('Fullscreen is unavailable in this browser or embedded view.');
+      }
+    } catch (error) {
+      console.warn('Preview fullscreen error:', error);
+      setFullscreenError('The browser could not change fullscreen mode. Try the fullscreen button again.');
+    } finally {
+      setFullscreenBusy(false);
+    }
+  };
+
+  const videoNotice = (() => {
+    if (videoError) {
+      return { tone: 'error', label: 'Camera / tracking needs attention', message: videoError };
+    }
+    if (bodyFraming) {
+      const tone = bodyFraming.status === 'ready' ? 'ready'
+        : ['checking', 'waiting'].includes(bodyFraming.status) ? 'neutral' : 'warning';
+      return { tone, label: bodyFraming.label, message: bodyFraming.message };
+    }
+    if (cameraPending) {
+      return { tone: 'neutral', label: 'Connecting your camera', message: 'Allow camera access in your browser if prompted.' };
+    }
+    if (cameraStatus === 'paused') {
+      return { tone: 'warning', label: 'Video playback paused', message: 'Click Play preview beside the camera to resume.' };
+    }
+    if (modelStatus === 'loading') {
+      return { tone: 'neutral', label: 'Preparing pose tracking', message: 'You can start the camera while the model loads.' };
+    }
+    return { tone: 'neutral', label: 'Ready to check your form', message: 'Start Camera, then step back until your head, hands and feet are visible.' };
+  })();
 
   const simulateDetection = () => {
     const blueprint = shotBlueprints[nextBlueprintIndex % shotBlueprints.length];
@@ -126,6 +186,16 @@ function App() {
           <div className="brand-title">
             <p className="eyebrow">Practice studio</p>
             <h1>Course Corrector</h1>
+          </div>
+        </div>
+        <div className={`video-notice video-notice--${videoNotice.tone}`}
+          role={videoError ? 'alert' : 'status'} aria-atomic="true">
+          <span className="video-notice-symbol" aria-hidden="true">
+            {videoNotice.tone === 'ready' ? '✓' : ['warning', 'error'].includes(videoNotice.tone) ? '!' : '◎'}
+          </span>
+          <div className="video-notice-copy">
+            <strong>{videoNotice.label}</strong>
+            <p>{videoNotice.message}</p>
           </div>
         </div>
         <div className="header-actions">
@@ -200,11 +270,30 @@ function App() {
           </div>
         </section>
 
-        <section className="panel video-panel">
+        <section className="panel video-panel" ref={previewPanelRef} aria-label="Live pose capture">
           <div className="panel-header">
             <div><p className="eyebrow">02 / Movement analysis</p><h2>Live pose capture</h2></div>
-            <span className={`badge ${cameraActive ? 'badge-live' : 'badge-neutral'}`}><i />{cameraActive ? 'Live' : 'Camera standby'}</span>
+            <div className="preview-header-actions">
+              <span className={`badge ${cameraActive ? 'badge-live' : 'badge-neutral'}`}><i />{cameraActive ? 'Live' : 'Camera standby'}</span>
+              <button className="secondary-button fullscreen-button" ref={fullscreenButtonRef}
+                onClick={togglePreviewFullscreen} disabled={fullscreenBusy} aria-pressed={isPreviewFullscreen}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+                  <path d={isPreviewFullscreen ? 'M3 9h6V3m6 0v6h6M3 15h6v6m6 0v-6h6' : 'M9 3H3v6m12-6h6v6M3 15v6h6m6 0h6v-6'} />
+                </svg>
+                {isPreviewFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              </button>
+            </div>
           </div>
+          {isPreviewFullscreen && (
+            <div className={`video-notice fullscreen-notice video-notice--${videoNotice.tone}`}
+              role={videoError ? 'alert' : 'status'} aria-atomic="true">
+              <span className="video-notice-symbol" aria-hidden="true">
+                {videoNotice.tone === 'ready' ? '✓' : ['warning', 'error'].includes(videoNotice.tone) ? '!' : '◎'}
+              </span>
+              <div className="video-notice-copy"><strong>{videoNotice.label}</strong><p>{videoNotice.message}</p></div>
+            </div>
+          )}
+          {fullscreenError && <p className="fullscreen-error" role="alert">{fullscreenError}</p>}
           <div className="camera-workspace">
           <div className="video-stage">
             <video className="pose-video" ref={videoRef} muted playsInline />
@@ -229,7 +318,7 @@ function App() {
               </button>
               {cameraStatus === 'paused' && <button className="secondary-button" onClick={resumeCamera}>Play preview</button>}
             </div>
-            <span className="camera-status" role="status">{poseStatus}</span>
+            <span className="camera-status">{poseStatus}</span>
           </div>
           {cameras.length > 1 && (
             <label className="camera-selector">Camera
@@ -248,7 +337,6 @@ function App() {
           </div>
           </div>
           </div>
-          {videoError && <p className="video-error" role="alert">{videoError}</p>}
           {cameraDetails && !cameraActive && (
             <details className="camera-diagnostics"><summary>Camera diagnostics</summary><pre>{JSON.stringify(cameraDetails, null, 2)}</pre></details>
           )}
