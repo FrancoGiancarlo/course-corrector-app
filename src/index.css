@@ -39,6 +39,8 @@ button {
   gap: 14px;
   transform: scale(var(--desktop-scale));
   transform-origin: top left;
+  overflow: hidden;
+
 }
 
 .topbar,
@@ -277,7 +279,37 @@ button {
 
 .video-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.camera-selector {
+  display: grid;
+  gap: 6px;
+}
+
+.camera-selector select {
+  width: 100%;
+  padding: 10px;
+  color: #eef4fb;
+  background: #152738;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+}
+
+.camera-diagnostics {
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.camera-diagnostics summary {
+  cursor: pointer;
+}
+
+.camera-diagnostics pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .video-stats {

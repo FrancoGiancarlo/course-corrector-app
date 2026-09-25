@@ -1,14 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-
-const MEDIAPIPE_WASM_ROOT = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm';
-const MEDIAPIPE_MODEL_ASSET_PATH =
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
-
-const POSE_CONNECTIONS = [
-  [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
-  [11, 23], [12, 24], [23, 24], [23, 25], [25, 27],
-  [27, 29], [29, 31], [24, 26], [26, 28], [28, 30], [30, 32],
-];
+import { useState } from 'react';
+import { usePoseCamera } from './usePoseCamera';
 
 const shotBlueprints = [
   { x: -62, y: 34, clubSpeed: 103.4, faceAngle: -2.8, confidence: 94 },
@@ -61,23 +52,12 @@ function App() {
   const [nextBlueprintIndex, setNextBlueprintIndex] = useState(0);
   const [showLogo, setShowLogo] = useState(true);
   const [showShotMenu, setShowShotMenu] = useState(false);
-  const [poseStatus, setPoseStatus] = useState('Loading pose model...');
-  const [poseModelReady, setPoseModelReady] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [poseCount, setPoseCount] = useState(0);
-  const [videoError, setVideoError] = useState('');
-  const [videoMetrics, setVideoMetrics] = useState({
-    fps: 0,
-    hipDrift: 0,
-    shoulderTilt: 0,
-  });
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const animationFrameRef = useRef(0);
-  const streamRef = useRef(null);
-  const poseLandmarkerRef = useRef(null);
-  const lastVideoTimeRef = useRef(-1);
-  const lastTimestampRef = useRef(0);
+  const {
+    videoRef, canvasRef, cameraActive, cameraPending, cameraConnected,
+    cameraStatus, modelStatus, poseStatus, poseCount, videoMetrics, videoError,
+    cameraDetails, cameras, selectedCamera, setSelectedCamera,
+    startCamera, stopCamera, resumeCamera,
+  } = usePoseCamera();
 
   const simulateDetection = () => {
     const blueprint = shotBlueprints[nextBlueprintIndex % shotBlueprints.length];
@@ -89,200 +69,6 @@ function App() {
   const resetSession = () => {
     setShots([]);
     setNextBlueprintIndex(0);
-  };
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    const initializePoseLandmarker = async () => {
-      try {
-        const { FilesetResolver, PoseLandmarker } = await import('@mediapipe/tasks-vision');
-        const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_ROOT);
-
-        if (isCancelled) {
-          return;
-        }
-
-        poseLandmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: MEDIAPIPE_MODEL_ASSET_PATH,
-          },
-          runningMode: 'VIDEO',
-          numPoses: 1,
-          minPoseDetectionConfidence: 0.5,
-          minPosePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
-
-        if (isCancelled) {
-          poseLandmarkerRef.current?.close();
-          return;
-        }
-
-        setPoseModelReady(true);
-        setPoseStatus('Pose model ready');
-      } catch (error) {
-        console.error(error);
-        setPoseStatus('Pose model failed to load');
-        setVideoError('Unable to initialize MediaPipe Pose Landmarker.');
-      }
-    };
-
-    initializePoseLandmarker();
-
-    return () => {
-      isCancelled = true;
-      cancelAnimationFrame(animationFrameRef.current);
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      poseLandmarkerRef.current?.close();
-    };
-  }, []);
-
-  const drawPoseOverlay = (landmarks) => {
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-
-    if (!canvas || !video) {
-      return;
-    }
-
-    const context = canvas.getContext('2d');
-
-    if (!context) {
-      return;
-    }
-
-    const width = video.videoWidth || 640;
-    const height = video.videoHeight || 360;
-    canvas.width = width;
-    canvas.height = height;
-
-    context.clearRect(0, 0, width, height);
-
-    if (!landmarks?.length) {
-      return;
-    }
-
-    context.save();
-    context.lineWidth = 3;
-    context.strokeStyle = 'rgba(122, 209, 255, 0.85)';
-    context.fillStyle = 'rgba(255, 209, 112, 0.95)';
-
-    for (const [startIndex, endIndex] of POSE_CONNECTIONS) {
-      const start = landmarks[startIndex];
-      const end = landmarks[endIndex];
-
-      if (!start || !end) {
-        continue;
-      }
-
-      context.beginPath();
-      context.moveTo(start.x * width, start.y * height);
-      context.lineTo(end.x * width, end.y * height);
-      context.stroke();
-    }
-
-    landmarks.forEach((landmark) => {
-      context.beginPath();
-      context.arc(landmark.x * width, landmark.y * height, 4, 0, Math.PI * 2);
-      context.fill();
-    });
-
-    context.restore();
-  };
-
-  const stopCamera = () => {
-    cancelAnimationFrame(animationFrameRef.current);
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
-    drawPoseOverlay([]);
-    setCameraActive(false);
-    setPoseCount(0);
-    setVideoMetrics({ fps: 0, hipDrift: 0, shoulderTilt: 0 });
-    setPoseStatus(poseModelReady ? 'Pose model ready' : 'Loading pose model...');
-  };
-
-  const runPoseLoop = () => {
-    const video = videoRef.current;
-    const poseLandmarker = poseLandmarkerRef.current;
-
-    if (!video || !poseLandmarker) {
-      return;
-    }
-
-    if (video.readyState >= 2 && video.currentTime !== lastVideoTimeRef.current) {
-      lastVideoTimeRef.current = video.currentTime;
-      const timestamp = performance.now();
-      const result = poseLandmarker.detectForVideo(video, timestamp);
-      const landmarks = result.landmarks?.[0] ?? [];
-
-      setPoseCount(result.landmarks?.length ?? 0);
-      drawPoseOverlay(landmarks);
-
-      if (landmarks.length >= 25) {
-        const leftShoulder = landmarks[11];
-        const rightShoulder = landmarks[12];
-        const leftHip = landmarks[23];
-        const rightHip = landmarks[24];
-        const shoulderTilt = Math.atan2(
-          (rightShoulder?.y ?? 0) - (leftShoulder?.y ?? 0),
-          (rightShoulder?.x ?? 0) - (leftShoulder?.x ?? 1)
-        ) * (180 / Math.PI);
-        const hipCenterX = (((leftHip?.x ?? 0) + (rightHip?.x ?? 0)) / 2) - 0.5;
-        const elapsed = lastTimestampRef.current ? timestamp - lastTimestampRef.current : 0;
-        lastTimestampRef.current = timestamp;
-
-        setVideoMetrics({
-          fps: elapsed > 0 ? Math.round(1000 / elapsed) : videoMetrics.fps,
-          hipDrift: Number((hipCenterX * 100).toFixed(1)),
-          shoulderTilt: Number(shoulderTilt.toFixed(1)),
-        });
-      }
-
-      result.close();
-    }
-
-    animationFrameRef.current = requestAnimationFrame(runPoseLoop);
-  };
-
-  const startCamera = async () => {
-    if (!poseModelReady) {
-      return;
-    }
-
-    try {
-      setVideoError('');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'user',
-          width: { ideal: 960 },
-          height: { ideal: 540 },
-        },
-        audio: false,
-      });
-
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-
-      setCameraActive(true);
-      setPoseStatus('Camera live');
-      lastVideoTimeRef.current = -1;
-      lastTimestampRef.current = 0;
-      animationFrameRef.current = requestAnimationFrame(runPoseLoop);
-    } catch (error) {
-      console.error(error);
-      setVideoError('Camera access was denied or unavailable.');
-      setPoseStatus('Camera unavailable');
-    }
   };
 
   const totalShots = shots.length;
@@ -509,26 +295,48 @@ function App() {
             </div>
 
             <div className="video-stage">
-              <video className="pose-video" ref={videoRef} autoPlay muted playsInline />
+              <video className="pose-video" ref={videoRef} muted playsInline />
               <canvas className="pose-canvas" ref={canvasRef} />
               {!cameraActive && (
                 <div className="video-empty">
-                  <strong>Camera preview</strong>
-                  <p>MediaPipe Pose Landmarker overlay will appear here once the camera is enabled.</p>
+                  <strong>{cameraPending ? 'Connecting camera...' : cameraStatus === 'paused' ? 'Playback paused' : 'Camera preview'}</strong>
+                  <p>{cameraPending
+                    ? 'Allow camera access in Firefox if prompted.'
+                    : cameraStatus === 'paused'
+                      ? 'Click Play preview to start the video.'
+                      : 'Start the camera to see live video and your pose overlay.'}</p>
                 </div>
               )}
             </div>
 
+            {cameras.length > 1 && (
+              <label className="camera-selector">
+                Camera
+                <select value={selectedCamera} disabled={cameraConnected}
+                  onChange={(event) => setSelectedCamera(event.target.value)}>
+                  <option value="">Browser default</option>
+                  {cameras.map((camera, index) => (
+                    <option key={camera.deviceId} value={camera.deviceId}>
+                      {camera.label || `Camera ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             <div className="video-actions">
-              <button className="primary-button" onClick={cameraActive ? stopCamera : startCamera} disabled={!poseModelReady && !cameraActive}>
-                {cameraActive ? 'Stop Camera' : 'Start Camera'}
+              <button className="primary-button" onClick={cameraConnected ? stopCamera : startCamera}>
+                {cameraPending ? 'Cancel camera' : cameraConnected ? 'Stop Camera' : 'Start Camera'}
               </button>
+              {cameraStatus === 'paused' && (
+                <button className="secondary-button" onClick={resumeCamera}>Play preview</button>
+              )}
             </div>
 
             <div className="video-stats">
               <article>
                 <span>Model</span>
-                <strong>{poseModelReady ? 'Pose ready' : 'Loading...'}</strong>
+                <strong>{modelStatus === 'ready' ? 'Pose ready' : modelStatus === 'error' ? 'Unavailable' : 'Loading...'}</strong>
               </article>
               <article>
                 <span>Poses tracked</span>
@@ -547,7 +355,13 @@ function App() {
                 <strong>{videoMetrics.shoulderTilt} deg</strong>
               </article>
             </div>
-            {videoError && <p className="video-error">{videoError}</p>}
+            {videoError && <p className="video-error" role="alert">{videoError}</p>}
+            {cameraDetails && !cameraActive && (
+              <details className="camera-diagnostics">
+                <summary>Camera diagnostics</summary>
+                <pre>{JSON.stringify(cameraDetails, null, 2)}</pre>
+              </details>
+            )}
           </section>
 
         </aside>
