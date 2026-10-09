@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePoseCamera } from './usePoseCamera';
+import { useSwingVideos } from './useSwingVideos';
+import { SwingVideo } from './SwingVideo';
+import { MAX_VIDEOS } from './swingVideoStore';
+import brandLogo from './assets/nice-on-golf-emblem.svg';
 
 const shotBlueprints = [
   { x: -62, y: 34, clubSpeed: 103.4, faceAngle: -2.8, confidence: 94 },
@@ -43,6 +47,7 @@ const createShot = (blueprint, index) => {
     side,
     bias,
     score,
+    createdAt: Date.now(),
     timestamp: `${9 + Math.floor(index / 3)}:${(12 + index * 4).toString().padStart(2, '0')}`,
   };
 };
@@ -63,6 +68,12 @@ function App() {
     cameraDetails, cameras, selectedCamera, setSelectedCamera, bodyFraming,
     startCamera, stopCamera, resumeCamera,
   } = usePoseCamera();
+  const recording = useSwingVideos(videoRef);
+  const recentEntries = [...shots, ...recording.videos].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
+  const stopCameraAndRecording = () => {
+    recording.stopRecording();
+    stopCamera();
+  };
 
   useEffect(() => {
     let wasPreviewFullscreen = false;
@@ -179,10 +190,13 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
-          {showLogo && (
-            <img className="brand-logo" src="/logo.png" alt="Nice Only Golfing Solutions"
-              onError={() => setShowLogo(false)} />
-          )}
+          <div className="brand-lockup">
+            {showLogo && (
+              <img className="brand-logo" src={brandLogo} alt="" width="56" height="56"
+                onError={() => setShowLogo(false)} />
+            )}
+            <p className="brand-name"><span>Nice On</span><span>Golfing Solutions</span></p>
+          </div>
           <div className="brand-title">
             <p className="eyebrow">Practice studio</p>
             <h1>Course Corrector</h1>
@@ -308,15 +322,27 @@ function App() {
                 <p>{cameraPending ? 'Allow camera access if prompted.' : cameraStatus === 'paused' ? 'Click Play preview to start the video.' : 'Start your camera and keep your full body in frame.'}</p>
               </div>
             )}
-            <span className="video-stage-label">{cameraActive ? 'POSE TRACKING' : 'LIVE PREVIEW'}</span>
+            <span className={`video-stage-label ${recording.phase === 'recording' ? 'recording-label' : ''}`}>
+              {recording.phase === 'countdown' ? `GET READY · ${recording.seconds}`
+                : recording.phase === 'recording' ? `RECORDING · ${recording.seconds}s`
+                  : cameraActive ? 'POSE TRACKING' : 'LIVE PREVIEW'}
+            </span>
           </div>
           <div className="camera-sidebar">
           <div className="video-controls">
             <div className="video-actions">
-              <button className={cameraConnected ? 'secondary-button' : 'primary-button'} onClick={cameraConnected ? stopCamera : startCamera}>
+              <button className={cameraConnected ? 'secondary-button' : 'primary-button'} onClick={cameraConnected ? stopCameraAndRecording : startCamera}>
                 {cameraPending ? 'Cancel camera' : cameraConnected ? 'Stop Camera' : 'Start Camera'}
               </button>
               {cameraStatus === 'paused' && <button className="secondary-button" onClick={resumeCamera}>Play preview</button>}
+              <button className="primary-button"
+                disabled={recording.phase === 'saving' || (recording.phase === 'idle' &&
+                  (!cameraActive || !recording.loaded || !recording.supported || !!recording.unsaved || recording.videos.length >= MAX_VIDEOS))}
+                onClick={recording.phase === 'idle' ? recording.startTest : recording.stopRecording}>
+                {recording.phase === 'countdown' ? `Cancel (${recording.seconds})`
+                  : recording.phase === 'recording' ? `Stop & save (${recording.seconds}s)`
+                    : recording.phase === 'saving' ? 'Saving video…' : 'Record 8s test'}
+              </button>
             </div>
             <span className="camera-status">{poseStatus}</span>
           </div>
@@ -336,6 +362,17 @@ function App() {
             <article><span>Shoulder tilt</span><strong>{videoMetrics.shoulderTilt}<small>°</small></strong></article>
           </div>
           </div>
+          <div className="recording-info">
+            <p>{recording.phase === 'countdown' ? `Get ready. Recording starts in ${recording.seconds} seconds.`
+              : recording.phase === 'recording' ? `Recording now. ${recording.seconds} seconds remaining.`
+                : 'Video test: 3s countdown, then 8s capture. No impact detection needed.'}</p>
+            <p>{recording.videos.length}/{MAX_VIDEOS} videos saved{recording.videos.length >= MAX_VIDEOS ? ' · Library full. Delete a video in View all to record again.' : ''}</p>
+            {!recording.supported && <p role="alert">This browser does not support video recording.</p>}
+            {recording.notice && <p role="status">{recording.notice}</p>}
+            {recording.error && <p className="recording-error" role="alert">{recording.error}</p>}
+            {!recording.loaded && <button className="tertiary-button" onClick={recording.refresh}>Retry video storage</button>}
+            {recording.unsaved && <button className="secondary-button" onClick={() => setShowShotMenu(true)}>Recover unsaved video</button>}
+          </div>
           </div>
           {cameraDetails && !cameraActive && (
             <details className="camera-diagnostics"><summary>Camera diagnostics</summary><pre>{JSON.stringify(cameraDetails, null, 2)}</pre></details>
@@ -344,18 +381,21 @@ function App() {
 
         <section className="panel recent-panel">
           <div className="panel-header"><div><h2>Recent swings</h2><p className="panel-subtitle">Your last three, at a glance.</p></div>
-            <button className="tertiary-button" onClick={() => setShowShotMenu(true)} disabled={!totalShots}>View all <span aria-hidden="true">↗</span></button>
+            <button className="tertiary-button" onClick={() => setShowShotMenu(true)}>View all <span aria-hidden="true">↗</span></button>
           </div>
           <div className="recent-table-wrap">
             <table className="recent-table">
-              <thead><tr><th>Swing</th><th>Flight bias</th><th>Club speed</th><th>Score</th></tr></thead>
+              <thead><tr><th>Swing</th><th>Type / Bias</th><th>Speed / Length</th><th>Result</th></tr></thead>
               <tbody>
-                {shots.slice(-3).reverse().map((shot) => <tr key={shot.id}>
+                {recentEntries.map((shot) => shot.kind === 'video' ? <tr key={shot.id}>
+                  <td><button className="tertiary-button video-row-button" onClick={() => setShowShotMenu(true)}>View video</button></td>
+                  <td>Recording test</td><td>{shot.duration.toFixed(1)}s</td><td>Saved</td>
+                </tr> : <tr key={shot.id}>
                   <td><span className="shot-number">{shot.index.toString().padStart(2, '0')}</span><span className="shot-side">{shot.side}</span></td>
                   <td><span className={`flight-dot ${shot.bias === 'Fade bias' ? 'dot-fade' : shot.bias === 'Draw bias' ? 'dot-draw' : 'dot-neutral'}`} />{shot.bias}</td>
                   <td>{shot.clubSpeed.toFixed(1)} <small>mph</small></td><td className="table-score">{shot.score}<small> / 100</small></td>
                 </tr>)}
-                {!totalShots && <tr><td colSpan="4" className="table-empty"><span aria-hidden="true">↗</span><div><strong>A fresh start.</strong><p>Swing to begin your session.</p></div></td></tr>}
+                {!recentEntries.length && <tr><td colSpan="4" className="table-empty"><span aria-hidden="true">↗</span><div><strong>A fresh start.</strong><p>Record a video test or simulate a swing.</p></div></td></tr>}
               </tbody>
             </table>
           </div>
@@ -381,13 +421,30 @@ function App() {
             <div className="shot-menu-header">
               <div>
                 <p className="eyebrow">Detailed View</p>
-                <h2>All detected swings</h2>
+                <h2>Recent swings &amp; videos</h2>
               </div>
               <button className="secondary-button" onClick={() => setShowShotMenu(false)}>
                 Close
               </button>
             </div>
 
+            <section className="video-library" aria-label="Saved swing videos">
+              <h3>Saved videos · {recording.videos.length}/{MAX_VIDEOS}</h3>
+              <p className="storage-note">Stored in this browser on this device. Clearing site data or browser storage cleanup can remove videos. Download any you want to keep. Reset session keeps saved videos.</p>
+              <p className="storage-note">Timed recording tests capture camera video without audio or the pose overlay. Impact detection and swing measurements are not attached yet.</p>
+              {recording.error && <p className="recording-error" role="alert">{recording.error}</p>}
+              {recording.unsaved && <div className="unsaved-video">
+                <p role="alert">This recording is only in memory. Download it or retry saving before leaving.</p>
+                <SwingVideo clip={recording.unsaved} />
+                <button className="secondary-button" disabled={recording.phase === 'saving' || recording.videos.length >= MAX_VIDEOS} onClick={recording.retrySave}>Retry saving video</button>
+                <button className="tertiary-button" disabled={recording.phase === 'saving'} onClick={() => {
+                  if (window.confirm('Discard this unsaved recording? Download it first if you want to keep it.')) recording.discardUnsaved();
+                }}>Discard unsaved recording</button>
+              </div>}
+              {!recording.videos.length && <p className="storage-note">Start Camera, then choose Record 8s test. Your video will appear here after it saves.</p>}
+              {recording.videos.map((clip) => <SwingVideo key={clip.id} clip={clip} onDelete={recording.removeVideo} deleting={recording.deleting} />)}
+            </section>
+            <h3 className="simulation-heading">Simulated swing data</h3>
             <div className="shot-menu-chart-panel">
               <div className="bias-chart-block">
                 <div className="bias-pie-chart" style={{ background: pieGradient }}>

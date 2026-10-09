@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" fill="none">
+  <defs>
+    <clipPath id="circle"><circle cx="500" cy="500" r="498"/></clipPath>
+    <linearGradient id="sky" x1="500" y1="0" x2="500" y2="1000" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8DD8F3"/><stop offset="1" stop-color="#D1EFFB"/>
+    </linearGradient>
+    <linearGradient id="pole" x1="496" y1="0" x2="512" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9D9D40"/><stop offset="1" stop-color="#FFEC29"/>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#circle)">
+    <path fill="url(#sky)" d="M0 0H1000V1000H0z"/>
+    <path fill="#718F43" d="M0 684H1000V1000H0z"/>
+    <path fill="#AAD16D" d="M0 786C146 755 277 651 403 645C474 640 543 645 593 647C711 650 823 751 1000 782C722 805 275 796 0 779Z"/>
+    <path fill="#A9E5F4" fill-opacity=".55" d="M450 502L502 649V499Z"/>
+    <ellipse cx="503" cy="649" rx="32" ry="6" fill="#10150A"/>
+    <ellipse cx="415" cy="629" rx="22" ry="25" transform="rotate(-25 415 629)" fill="#A6C4CC"/>
+    <ellipse cx="420" cy="626" rx="21" ry="25" transform="rotate(-25 420 626)" fill="white"/>
+    <path fill="url(#pole)" d="M496 10H510V653H496z"/>
+    <path fill="#F34448" d="M510 10C542 14 572 21 585 39C590 76 624 77 668 82C649 101 648 131 619 141C581 152 579 131 554 128C536 125 523 134 510 145Z"/>
+    <path fill="#8F3036" d="M585 39C590 73 591 117 619 141C606 144 589 144 580 137C572 129 583 71 585 39Z"/>
+    <path fill="#9C3532" d="M510 10L520 119L518 140L510 145Z"/>
+    <g stroke="#10190E" stroke-width="5">
+      <path d="M0 501H139M861 501H1000M500 0V140M500 846V1000"/>
+      <path d="M139 484V518M236 484V518M334 484V518M431 484V518M569 484V518M666 484V518M764 484V518M861 484V518"/>
+      <path d="M188 492V509M285 492V509M383 492V509M617 492V509M715 492V509M812 492V509"/>
+      <path d="M483 141H517M483 238H517M483 335H517M483 432H517M483 569H517M483 666H517M483 763H517M483 845H522"/>
+      <path d="M492 189H509M492 286H509M492 384H509M492 617H509M492 715H509M492 812H509"/>
+    </g>
+    <path d="M465 501H534M500 466V536" stroke="#EB8E7A" stroke-width="5"/>
+  </g>
+</svg>

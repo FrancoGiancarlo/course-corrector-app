@@ -11,7 +11,7 @@
     <path d="M6 118H230" stroke="#5E7D91" stroke-width="3" stroke-dasharray="4 12"/>
     <path d="M118 8V228" stroke="#5E7D91" stroke-width="3" stroke-dasharray="4 12"/>
   </g>
-  <g fill="#C51612" font-family="Georgia, 'Times New Roman', serif" font-weight="700">
+  <g fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-weight="700">
     <text x="274" y="110" font-size="96">Nice</text>
     <text x="560" y="110" font-size="96">Only</text>
     <text x="274" y="212" font-size="96">Golfing</text>
