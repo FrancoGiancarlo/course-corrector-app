@@ -69,6 +69,23 @@ small { font-size: .7em; color: var(--muted); font-weight: 400; }
 .tertiary-button { background: transparent; color: var(--mint); padding: 4px 0 4px 10px; min-height: 28px; }
 .tertiary-button:hover:not(:disabled) { color: #fff; }
 
+.club-panel { display: grid; gap: 10px; }
+.club-heading, .club-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.club-heading > .badge { white-space: normal; overflow-wrap: anywhere; }
+.club-actions { margin-left: auto; }
+.club-note, .club-warning { font-size: 12px; line-height: 1.5; }
+.club-note { color: var(--muted); }
+.club-warning { color: #ffcf78; }
+.club-telemetry { border-top: 1px solid var(--border); padding-top: 10px; }
+.club-telemetry summary { cursor: pointer; color: var(--mint); font-size: 12px; }
+.club-readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; padding: 14px 0; }
+.club-readings span { display: block; color: var(--muted); font-size: 11px; }
+.club-readings strong { display: block; font-size: 13px; margin-top: 5px; font-variant-numeric: tabular-nums; }
+.device-status.club-online i { background: var(--mint); }
+@media (max-width: 700px) {
+  .club-actions { margin-left: 0; width: 100%; }
+}
+
 .dashboard-grid { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 84px minmax(310px, 1fr) 184px; gap: 14px; min-width: 0; }
 .session-overview { grid-column: 1 / -1; display: grid; grid-template-columns: 1.25fr repeat(4, 1fr); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
 .score-card { display: flex; align-items: center; gap: 14px; padding: 14px 20px; background: linear-gradient(100deg, #1a2c2a, #13201f); }
@@ -407,3 +424,8 @@ small { font-size: .7em; color: var(--muted); font-weight: 400; }
   .camera-sidebar .video-stats article { padding: 4px 0; }
   .map-caption { font-size: 9px; }
 }
+.club-profile { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--muted); max-width: 100%; }
+.club-profile select { padding: 8px; border: 1px solid #344754; border-radius: 6px; background: #111e28; color: #d5e3ec; max-width: 100%; }
+.club-raw { margin-top: 12px; min-width: 0; }
+.club-raw > span { font-size: 11px; color: var(--muted); }
+.club-raw pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 10px; background: #0b1118; border-radius: 6px; font-size: 12px; }

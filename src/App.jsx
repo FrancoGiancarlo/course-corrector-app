@@ -3,6 +3,8 @@ import { usePoseCamera } from './usePoseCamera';
 import { useSwingVideos } from './useSwingVideos';
 import { SwingVideo } from './SwingVideo';
 import { MAX_VIDEOS } from './swingVideoStore';
+import { useClubBluetooth } from './useClubBluetooth';
+import { ClubBluetoothPanel } from './ClubBluetoothPanel';
 import brandLogo from './assets/nice-on-golf-emblem.svg';
 
 const shotBlueprints = [
@@ -53,6 +55,7 @@ const createShot = (blueprint, index) => {
 };
 
 function App() {
+  const club = useClubBluetooth();
   const [shots, setShots] = useState([]);
   const [nextBlueprintIndex, setNextBlueprintIndex] = useState(0);
   const [showLogo, setShowLogo] = useState(true);
@@ -213,7 +216,7 @@ function App() {
           </div>
         </div>
         <div className="header-actions">
-          <span className="device-status"><i />Smart club offline</span>
+          <span className={`device-status ${club.status === 'connected' ? 'club-online' : ''}`}><i />{club.status === 'connected' ? 'Smart club connected' : 'Smart club offline'}</span>
           <button className="secondary-button" onClick={resetSession} disabled={!totalShots}>Reset session</button>
           <button className="primary-button" onClick={simulateDetection}>
             <span aria-hidden="true">+</span> Simulate swing
@@ -221,6 +224,7 @@ function App() {
         </div>
       </header>
 
+      <ClubBluetoothPanel club={club} />
       <main className="dashboard-grid">
         <section className="session-overview" aria-label="Session overview">
           <article className="score-card">
