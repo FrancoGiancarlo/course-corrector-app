@@ -424,8 +424,7 @@ small { font-size: .7em; color: var(--muted); font-weight: 400; }
   .camera-sidebar .video-stats article { padding: 4px 0; }
   .map-caption { font-size: 9px; }
 }
-.club-profile { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--muted); max-width: 100%; }
-.club-profile select { padding: 8px; border: 1px solid #344754; border-radius: 6px; background: #111e28; color: #d5e3ec; max-width: 100%; }
-.club-raw { margin-top: 12px; min-width: 0; }
-.club-raw > span { font-size: 11px; color: var(--muted); }
-.club-raw pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 10px; background: #0b1118; border-radius: 6px; font-size: 12px; }
+.club-strain-table { overflow-x: auto; }
+.club-strain-table table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.club-strain-table th, .club-strain-table td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border); }
+.club-strain-table th { color: var(--muted); font-weight: 500; }

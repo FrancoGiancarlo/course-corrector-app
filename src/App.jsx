@@ -4,7 +4,7 @@ import { useSwingVideos } from './useSwingVideos';
 import { SwingVideo } from './SwingVideo';
 import { MAX_VIDEOS } from './swingVideoStore';
 import { useClubBluetooth } from './useClubBluetooth';
-import { ClubBluetoothPanel } from './ClubBluetoothPanel';
+import BluetoothPanel from '../BluetoothPanel';
 import brandLogo from './assets/nice-on-golf-emblem.svg';
 
 const shotBlueprints = [
@@ -224,7 +224,7 @@ function App() {
         </div>
       </header>
 
-      <ClubBluetoothPanel club={club} />
+      <BluetoothPanel club={club} />
       <main className="dashboard-grid">
         <section className="session-overview" aria-label="Session overview">
           <article className="score-card">

@@ -1,34 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ClubBluetooth, bluetoothSupport, decodeTelemetry, CLUB_SERVICE,
-  TELEMETRY_CHARACTERISTIC, COMMAND_CHARACTERISTIC, STARTER_SERVICE,
-  STARTER_CHARACTERISTIC, decodeStarterNotification } from '../src/clubBluetooth.js';
+import { ClubBluetooth, bluetoothSupport, decodePacket, createAssembler, SERVICE_UUID, TELEMETRY_UUID } from '../bluetoothService.js';
+import { packet, snapshot } from './bleFixtures.mjs';
 
-function packet() {
-  return new DataView(Uint8Array.from([
-    1, 3, 42, 0, 232, 3, 0, 0, 156, 255, 0, 0, 232, 3, 123, 0, 133, 255, 0, 0,
-  ]).buffer);
-}
 function deferred() {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-function harness(starter = false) {
-  const serviceUuid = starter ? STARTER_SERVICE : CLUB_SERVICE;
-  const telemetryUuid = starter ? STARTER_CHARACTERISTIC : TELEMETRY_CHARACTERISTIC;
+function harness() {
   const telemetry = new EventTarget();
   telemetry.properties = { notify: true };
-  let subscribed = false;
-  telemetry.startNotifications = async () => { subscribed = true; };
-  const writes = [];
-  const command = { properties: { write: true }, writeValueWithResponse: async (bytes) => {
-    assert.equal(subscribed, true);
-    writes.push([...bytes]);
-  } };
+  telemetry.startNotifications = async () => telemetry;
   const service = { getCharacteristic: async (uuid) => {
-    assert.ok((starter ? [telemetryUuid] : [telemetryUuid, COMMAND_CHARACTERISTIC]).includes(uuid));
-    return uuid === telemetryUuid ? telemetry : command;
+    assert.equal(uuid, TELEMETRY_UUID); // No command characteristic may be requested.
+    return telemetry;
   } };
   const device = new EventTarget();
   device.name = 'CourseCorrector';
@@ -36,7 +22,7 @@ function harness(starter = false) {
   device.gatt = {
     connected: false,
     connect: async () => { device.gatt.connected = true; return device.gatt; },
-    getPrimaryService: async (uuid) => { assert.equal(uuid, serviceUuid); return service; },
+    getPrimaryService: async (uuid) => { assert.equal(uuid, SERVICE_UUID); return service; },
     disconnect: () => {
       disconnects++;
       device.gatt.connected = false;
@@ -47,105 +33,20 @@ function harness(starter = false) {
   const environment = { isSecureContext: true, navigator: { bluetooth: {
     requestDevice: async (options) => {
       selections++;
-      assert.deepEqual(options, { filters: [{ services: [serviceUuid] }] });
+      assert.deepEqual(options, { filters: [{ services: [SERVICE_UUID] }] });
       return device;
     },
   } } };
   const client = new ClubBluetooth(environment);
-  if (starter) client.setProfile('adxl345');
-  return { client, environment, device, telemetry, command, writes, service,
+  return { client, environment, device, telemetry, service,
     get selections() { return selections; }, get disconnects() { return disconnects; },
     notify(value = packet()) {
       telemetry.value = value;
       telemetry.dispatchEvent(new Event('characteristicvaluechanged'));
     },
+    snapshot(seq = 42, flags = 15) { snapshot(seq, flags).forEach(value => this.notify(value)); },
   };
 }
-
-test('starter preserves text and exact bytes without assuming fields, units or binary v1', () => {
-  const bytes = new TextEncoder().encode('xxX:1,Y:2,Z:3\nzz');
-  const sample = decodeStarterNotification(new DataView(bytes.buffer, 2, bytes.length - 4));
-  assert.equal(sample.rawText, 'X:1,Y:2,Z:3\n');
-  assert.equal(sample.rawHex, '58 3a 31 2c 59 3a 32 2c 5a 3a 33 0a');
-  assert.equal(sample.byteLength, 12);
-  assert.equal(sample.acceleration, undefined);
-  assert.equal(decodeStarterNotification(packet()).byteLength, 20);
-  assert.equal(decodeStarterNotification(new DataView(Uint8Array.of(0, 255).buffer)).rawHex, '00 ff');
-  for (const value of [null, new Uint8Array(2), new DataView(new ArrayBuffer(0)), new DataView(new ArrayBuffer(513))]) {
-    assert.throws(() => decodeStarterNotification(value), /1–512 bytes/);
-  }
-});
-
-test('starter subscribes using supplied UUIDs without a command characteristic and reconnects', async () => {
-  const h = harness(true);
-  await h.client.connect();
-  assert.equal(h.client.state.status, 'connected');
-  assert.match(h.client.state.notice, /Listening for notifications/);
-  h.client.setProfile('courseCorrector');
-  assert.equal(h.client.state.profile, 'adxl345');
-  await h.client.sendCommand('start');
-  assert.deepEqual(h.writes, []);
-  h.notify(new DataView(new TextEncoder().encode('1,2,3').buffer));
-  assert.equal(h.client.state.sample.rawText, '1,2,3');
-  assert.equal(h.client.state.sample.gyroscope, undefined);
-  h.notify(new DataView(new ArrayBuffer(0)));
-  assert.equal(h.client.state.invalidPackets, 1);
-  assert.equal(h.client.state.sample.rawText, '1,2,3');
-  h.device.gatt.disconnect();
-  assert.equal(h.client.state.sample, null);
-  await h.client.connect(true);
-  assert.equal(h.client.state.status, 'connected');
-  assert.equal(h.selections, 1);
-  h.notify();
-  assert.equal(h.client.state.packets, 1);
-  h.client.disconnect();
-  h.client.setProfile('courseCorrector');
-  assert.equal(h.client.state.canReconnect, false);
-  assert.equal(h.client.rememberedDevice, null);
-  assert.equal(h.client.state.packets, 0);
-  assert.throws(() => h.client.setProfile('missing'), /Unknown club profile/);
-  h.client.dispose();
-});
-
-test('starter rejects a server without notifications and releases it', async () => {
-  const h = harness(true);
-  h.telemetry.properties.notify = false;
-  await h.client.connect();
-  assert.equal(h.client.state.status, 'disconnected');
-  assert.match(h.client.state.error, /must support notifications/);
-  assert.equal(h.device.gatt.connected, false);
-});
-
-test('decodes signed little-endian data, units, flags and offsets into a larger buffer', () => {
-  const bytes = new Uint8Array(30);
-  bytes.set(new Uint8Array(packet().buffer), 5);
-  assert.deepEqual(decodeTelemetry(new DataView(bytes.buffer, 5, 20)), {
-    demo: true, streaming: true, sensorValid: false, sequence: 42, deviceTimeMs: 1000,
-    acceleration: [-0.1, 0, 1], gyroscope: [12.3, -12.3, 0],
-  });
-  const value = packet();
-  value.setUint8(1, 4);
-  value.setUint16(2, 65535, true);
-  value.setUint32(4, 0xffffffff, true);
-  const sample = decodeTelemetry(value);
-  assert.equal(sample.demo, false);
-  assert.equal(sample.sensorValid, true);
-  assert.equal(sample.streaming, false);
-  assert.equal(sample.sequence, 65535);
-  assert.equal(sample.deviceTimeMs, 0xffffffff);
-});
-
-test('rejects wrong sizes, versions and reserved flags', () => {
-  for (const value of [null, new Uint8Array(20), new DataView(new ArrayBuffer(19)), new DataView(new ArrayBuffer(21))]) {
-    assert.throws(() => decodeTelemetry(value), /20-byte/);
-  }
-  const value = packet();
-  value.setUint8(0, 2);
-  assert.throws(() => decodeTelemetry(value), /version/);
-  value.setUint8(0, 1);
-  value.setUint8(1, 8);
-  assert.throws(() => decodeTelemetry(value), /flags/);
-});
 
 test('detects insecure and unsupported environments before opening chooser', async () => {
   assert.match(bluetoothSupport({ isSecureContext: false }), /HTTPS/);
@@ -157,41 +58,37 @@ test('detects insecure and unsupported environments before opening chooser', asy
   assert.equal(h.client.state.status, 'disconnected');
 });
 
-test('connects, receives packets, writes binary controls and reconnects without another chooser', async () => {
+test('connects only to the flashed protocol, receives snapshots and reconnects without another chooser', async () => {
   const h = harness();
   await h.client.connect();
   assert.equal(h.client.state.status, 'connected');
-  await h.client.sendCommand('start');
-  await h.client.sendCommand('stop');
-  await h.client.sendCommand('ping');
-  assert.deepEqual(h.writes, [[1], [2], [3]]);
-  h.notify();
-  assert.equal(h.client.state.packets, 1);
-  assert.equal(h.client.state.sample.sequence, 42);
+  h.snapshot();
+  assert.equal(h.client.state.stats.good, 1);
+  assert.equal(h.client.state.sample.seq, 42);
   h.client.disconnect();
   assert.equal(h.disconnects, 1);
   assert.equal(h.client.state.sample, null);
-  h.notify();
-  assert.equal(h.client.state.packets, 1);
+  h.snapshot();
+  assert.equal(h.client.state.stats.good, 1);
   await h.client.connect(true);
   assert.equal(h.selections, 1);
-  assert.equal(h.client.state.packets, 0);
-  h.notify();
-  assert.equal(h.client.state.packets, 1); // No duplicate notification listeners.
+  assert.equal(h.client.state.stats.good, 0);
+  h.snapshot();
+  assert.equal(h.client.state.stats.good, 1); // No duplicate notification listeners.
   h.client.dispose();
 });
 
 test('bad packets do not replace valid samples, later valid packets clear protocol errors', async () => {
   const h = harness();
   await h.client.connect();
-  h.notify();
+  h.snapshot();
   const sample = h.client.state.sample;
   h.notify(new DataView(new ArrayBuffer(2)));
   assert.equal(h.client.state.sample, sample);
-  assert.equal(h.client.state.invalidPackets, 1);
+  assert.equal(h.client.state.stats.invalid, 1);
   assert.match(h.client.state.protocolError, /20-byte/);
-  h.notify();
-  assert.equal(h.client.state.packets, 2);
+  h.snapshot(43);
+  assert.equal(h.client.state.stats.good, 2);
   assert.equal(h.client.state.protocolError, '');
   h.client.dispose();
 });
@@ -199,15 +96,15 @@ test('bad packets do not replace valid samples, later valid packets clear protoc
 test('radio loss clears live readings and preserves manual reconnect', async () => {
   const h = harness();
   await h.client.connect();
-  h.notify();
+  h.snapshot();
   h.device.gatt.disconnect();
   assert.equal(h.client.state.status, 'disconnected');
   assert.equal(h.client.state.sample, null);
   assert.equal(h.client.state.lastReceivedAt, null);
   assert.equal(h.client.state.canReconnect, true);
   assert.match(h.client.state.notice, /Connection lost/);
-  h.notify();
-  assert.equal(h.client.state.packets, 1);
+  h.snapshot();
+  assert.equal(h.client.state.stats.good, 1);
   h.client.dispose();
 });
 
@@ -216,7 +113,7 @@ test('chooser cancellation and missing firmware have distinct actionable message
   const error = Object.assign(new Error(), { name: 'NotFoundError' });
   h.environment.navigator.bluetooth.requestDevice = async () => { throw error; };
   await h.client.connect();
-  assert.match(h.client.state.error, /No club selected/);
+  assert.match(h.client.state.error, /No ESP32 selected/);
   h.environment.navigator.bluetooth.requestDevice = async () => h.device;
   h.service.getCharacteristic = async () => { throw error; };
   await h.client.connect();
@@ -227,14 +124,14 @@ test('chooser cancellation and missing firmware have distinct actionable message
 test('failed subscription and incompatible properties release the connection', async () => {
   for (const failure of ['properties', 'subscription']) {
     const h = harness();
-    if (failure === 'properties') h.command.properties.write = false;
+    if (failure === 'properties') h.telemetry.properties.notify = false;
     else h.telemetry.startNotifications = async () => { throw new Error('Subscription failed'); };
     await h.client.connect();
     assert.equal(h.client.state.status, 'disconnected');
     assert.equal(h.device.gatt.connected, false);
     assert.ok(h.client.state.error);
-    h.notify();
-    assert.equal(h.client.state.packets, 0);
+    h.snapshot();
+    assert.equal(h.client.state.stats.good, 0);
   }
 });
 
@@ -277,47 +174,10 @@ test('late subscription completion cannot revive disposed client', async () => {
   h.client.dispose();
   subscription.resolve();
   await connect;
-  h.notify();
+  h.snapshot();
   assert.equal(h.client.state.status, 'disconnected');
-  assert.equal(h.client.state.packets, 0);
+  assert.equal(h.client.state.stats.good, 0);
   assert.equal(h.device.gatt.connected, false);
-});
-
-test('pending writes cannot overlap or update a new connection after disconnect', async () => {
-  const h = harness();
-  await h.client.connect();
-  const write = deferred();
-  let writes = 0;
-  h.command.writeValueWithResponse = () => { writes++; return write.promise; };
-  const sending = h.client.sendCommand('start');
-  await h.client.sendCommand('stop');
-  assert.equal(writes, 1);
-  assert.equal(h.client.state.commandPending, true);
-  h.client.disconnect();
-  await h.client.connect(true);
-  write.reject(new Error('Old write failed'));
-  await sending;
-  assert.equal(h.client.state.error, '');
-  assert.equal(h.client.state.commandPending, false);
-  assert.match(h.client.state.notice, /Club connected/);
-  h.client.dispose();
-});
-
-test('write errors allow retries and do not invent stream confirmation', async () => {
-  const h = harness();
-  await h.client.connect();
-  h.command.writeValueWithResponse = async () => { throw new Error('Write failed'); };
-  await h.client.sendCommand('start');
-  assert.equal(h.client.state.error, 'Write failed');
-  assert.equal(h.client.state.commandPending, false);
-  assert.equal(h.client.state.sample, null);
-  h.command.writeValueWithResponse = async () => {};
-  await h.client.sendCommand('start');
-  assert.equal(h.client.state.error, '');
-  assert.match(h.client.state.notice, /Check telemetry below/);
-  assert.equal(h.client.state.sample, null);
-  await assert.rejects(h.client.sendCommand('unknown'), /Unknown club command/);
-  h.client.dispose();
 });
 
 test('burst notifications are published in batches, and cleanup clears the timer', async () => {
@@ -325,13 +185,130 @@ test('burst notifications are published in batches, and cleanup clears the timer
   await h.client.connect();
   let publications = 0;
   const unsubscribe = h.client.subscribe(() => publications++);
-  for (let i = 0; i < 100; i++) h.notify();
+  for (let i = 0; i < 100; i++) h.snapshot(i);
   assert.equal(publications, 0);
-  assert.equal(h.client.state.packets, 100);
+  assert.equal(h.client.state.stats.good, 100);
   await new Promise((resolve) => setTimeout(resolve, 130));
   assert.equal(publications, 1);
-  h.notify();
+  h.snapshot();
   h.client.dispose();
   assert.equal(h.client.publishTimer, null);
   unsubscribe();
+});
+test('decodes signed ADC, IMU scaling, unsigned benchmark values and buffer offsets', () => {
+  const bytes = new Uint8Array(30);
+  bytes.set(new Uint8Array(packet(1).buffer), 5);
+  assert.deepEqual(decodePacket(new DataView(bytes.buffer, 5, 20)).adc, [-32768, -1, 0, 1, 32767, 100, -100, 16384]);
+  assert.deepEqual(decodePacket(packet(2)), {
+    type: 2, flags: 15, seq: 42, uptimeMs: 1000,
+    accel: { x: -0.1, y: 0, z: 1 }, gyro: { x: 12.3, y: -12.3, z: 3276.7 },
+  });
+  assert.deepEqual(decodePacket(packet(3)).benchmark, { sps: 123456, valid: 4000000000, errors: 7, ageMs: 1500 });
+});
+
+test('honors each sensor validity bit independently', () => {
+  for (let flags = 0; flags < 16; flags++) {
+    assert.equal(decodePacket(packet(1, 0, flags)).adc !== null, Boolean(flags & 1));
+    assert.equal(decodePacket(packet(2, 0, flags)).accel !== null, Boolean(flags & 2));
+    assert.equal(decodePacket(packet(2, 0, flags)).gyro !== null, Boolean(flags & 4));
+    assert.equal(decodePacket(packet(3, 0, flags)).benchmark !== null, Boolean(flags & 8));
+  }
+});
+
+test('rejects malformed lengths, old protocol, unknown versions/types and reserved flags', () => {
+  for (const value of [null, new Uint8Array(20), new DataView(new ArrayBuffer(19)), new DataView(new ArrayBuffer(21))]) {
+    assert.throws(() => decodePacket(value), /20-byte/);
+  }
+  for (const header of [0x01, 0x10, 0x14, 0x21, 0xff]) {
+    const value = packet();
+    value.setUint8(0, header);
+    assert.throws(() => decodePacket(value), /header/);
+  }
+  assert.throws(() => decodePacket(packet(1, 0, 16)), /header/);
+});
+
+test('assembles reordered parts exactly once, rejects inconsistent flags and ignores duplicates', () => {
+  const samples = [];
+  let stats;
+  const accept = createAssembler(sample => samples.push(sample), value => { stats = value; });
+  accept(packet(3));
+  accept(packet(1));
+  accept(packet(1));
+  accept(packet(2, 42, 0));
+  assert.equal(samples.length, 0);
+  assert.deepEqual(stats, { good: 0, missing: 0, invalid: 1 });
+  accept(packet(2));
+  snapshot().forEach(accept);
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].adc[0], -32768);
+  assert.equal(samples[0].accel.x, -0.1);
+  assert.equal(samples[0].benchmark.sps, 123456);
+  assert.deepEqual(stats, { good: 1, missing: 0, invalid: 1 });
+});
+
+test('counts incomplete and skipped snapshots immediately without mixing sequences', () => {
+  const samples = [];
+  let stats;
+  const accept = createAssembler(sample => samples.push(sample), value => { stats = value; });
+  accept(packet(1, 10));
+  accept(packet(2, 10));
+  accept(packet(3, 12));
+  assert.deepEqual(stats, { good: 0, missing: 2, invalid: 0 });
+  accept(packet(3, 10)); // Late part cannot resurrect the incomplete snapshot.
+  assert.equal(samples.length, 0);
+  accept(packet(1, 12));
+  accept(packet(2, 12));
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].seq, 12);
+  assert.deepEqual(stats, { good: 1, missing: 2, invalid: 0 });
+});
+
+test('sequence rollover accepts zero and ignores duplicates and older notifications', () => {
+  const samples = [];
+  let stats;
+  const accept = createAssembler(sample => samples.push(sample), value => { stats = value; });
+  for (const seq of [65535, 0, 65535, 0, 1]) snapshot(seq).forEach(accept);
+  assert.deepEqual(samples.map(sample => sample.seq), [65535, 0, 1]);
+  assert.deepEqual(stats, { good: 3, missing: 0, invalid: 0 });
+});
+
+test('partial, invalid and duplicate packets never refresh the live reading timestamp', async () => {
+  const h = harness();
+  await h.client.connect();
+  h.notify(packet(1));
+  assert.equal(h.client.state.lastReceivedAt, null);
+  assert.equal(h.client.state.sample, null);
+  h.snapshot();
+  const timestamp = h.client.state.lastReceivedAt;
+  const sample = h.client.state.sample;
+  h.snapshot();
+  h.notify(packet(1, 43));
+  h.notify(new DataView(new ArrayBuffer(2)));
+  assert.equal(h.client.state.lastReceivedAt, timestamp);
+  assert.equal(h.client.state.sample, sample);
+  assert.equal(h.client.state.stats.good, 1);
+  h.client.dispose();
+});
+
+test('reconnection discards partial snapshots from the previous session', async () => {
+  const h = harness();
+  await h.client.connect();
+  h.notify(packet(1));
+  h.client.disconnect();
+  await h.client.connect(true);
+  h.notify(packet(2));
+  h.notify(packet(3));
+  assert.equal(h.client.state.sample, null);
+  h.notify(packet(1));
+  assert.equal(h.client.state.stats.good, 1);
+  h.client.dispose();
+});
+
+test('disconnect during notification setup cannot report connected', async () => {
+  const h = harness();
+  h.telemetry.startNotifications = async () => { h.device.gatt.connected = false; };
+  await h.client.connect();
+  assert.equal(h.client.state.status, 'disconnected');
+  assert.match(h.client.state.error, /disconnected during setup/);
+  h.client.dispose();
 });

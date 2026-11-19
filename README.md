@@ -32,24 +32,20 @@ npm run build
 
 ## ESP32 Bluetooth
 
-For the supplied **BLE_Client_Test_Current.ino**, choose **ADXL345 starter server**
-in the Smart club panel and connect directly to its separate sensor/server board.
-The app uses the starter's UUIDs and shows received text and hex bytes. The client
-sketch itself is a receiver and will not appear in the browser chooser. See the
-[starter integration steps](docs/bluetooth.md#integrating-the-supplied-adxl345-client-starter).
-Payload decoding needs sample messages or the server sketch to confirm units.
+The **Smart club** panel now connects only to the already-flashed Course Corrector
+ESP32, using the supplied `BluetoothPanel.jsx` and `bluetoothService.js` contract.
+Open the app in Chrome or Edge on localhost or HTTPS, then click **Connect ESP32**.
 
-Open the app in Chrome or Edge on Windows using localhost or HTTPS. The **Smart
-club** panel supports choosing, connecting, disconnecting, reconnecting, starting
-and stopping telemetry, and requesting a sample from an ESP32 BLE peripheral
-when **Course Corrector firmware** is selected.
+The board sends automatic 10 Hz diagnostic snapshots containing eight strain ADC
+channels, acceleration, gyroscope readings and the last ADC benchmark. The GUI
+assembles all three packet types before displaying a snapshot and hides stale or
+unavailable readings. Disconnect and reconnect controls are included.
 
-See [Bluetooth setup and protocol](docs/bluetooth.md) for the UUIDs, 20-byte sensor
-packet format, browser requirements, and a matching Arduino IDE starter sketch.
-The sketch sends explicitly labeled demo packets until you integrate your IMU.
-Live sensor telemetry is separate from the existing simulated swing metrics.
-Download saved videos in your previous browser before switching; browser storage
-does not transfer automatically.
+Previous test firmware profiles and stream commands have been removed. See
+[Bluetooth setup and protocol](docs/bluetooth.md) for the current UUIDs, packet
+layout and troubleshooting. Live telemetry remains separate from simulated swing
+metrics. Download saved videos before switching browsers; browser storage does
+not transfer automatically.
 
 ## Video recording benchmark
 

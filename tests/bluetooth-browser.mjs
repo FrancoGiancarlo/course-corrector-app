@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import assert from 'node:assert/strict';
+import { snapshot } from './bleFixtures.mjs';
 import { chromium } from '../.camera-check.local/node_modules/playwright/index.mjs';
 
 const root = resolve('dist');
@@ -29,47 +30,25 @@ try {
     const telemetry = new EventTarget();
     telemetry.properties = { notify: true };
     telemetry.startNotifications = async () => telemetry;
-    let sequence = 0;
-    let streaming = false;
     const mock = {
-      commands: [], selections: 0, cancelNext: false, starter: false,
-      emitText(text) {
-        telemetry.value = new DataView(new TextEncoder().encode(text).buffer);
-        telemetry.dispatchEvent(new Event('characteristicvaluechanged'));
-      },
-      emit(malformed = false) {
-        const value = new DataView(new ArrayBuffer(malformed ? 3 : 20));
-        if (!malformed) {
-          value.setUint8(0, 1);
-          value.setUint8(1, 1 | (streaming ? 2 : 0));
-          value.setUint16(2, sequence++, true);
-          value.setUint32(4, 1000, true);
-          value.setInt16(8, -100, true);
-          value.setInt16(12, 1000, true);
+      selections: 0, cancelNext: false,
+      emit(packets) {
+        for (const bytes of packets) {
+          telemetry.value = new DataView(Uint8Array.from(bytes).buffer);
+          telemetry.dispatchEvent(new Event('characteristicvaluechanged'));
         }
-        telemetry.value = value;
-        telemetry.dispatchEvent(new Event('characteristicvaluechanged'));
       },
     };
-    const command = { properties: { write: true }, writeValueWithResponse: async (bytes) => {
-      mock.commands.push(bytes[0]);
-      if (bytes[0] === 1) streaming = true;
-      if (bytes[0] === 2) streaming = false;
-      mock.emit();
-    } };
     const device = new EventTarget();
     device.name = 'CourseCorrector';
     device.gatt = {
       connected: false,
       connect: async () => { device.gatt.connected = true; return device.gatt; },
       getPrimaryService: async (service) => {
-        if (mock.starter && service !== '4fafc201-1fb5-459e-8fcc-c5c9c331914b') throw new Error('Wrong starter service');
+        if (service !== 'a9081000-17c4-4e70-8c24-174219c76510') throw new Error('Wrong ESP32 service');
         return { getCharacteristic: async (uuid) => {
-          if (mock.starter) {
-            if (uuid !== 'beb5483e-36e1-4688-b7f5-ea07361b26a8') throw new Error('Wrong starter characteristic');
-            return telemetry;
-          }
-          return uuid.startsWith('7b183001') ? telemetry : command;
+          if (uuid !== 'a9081001-17c4-4e70-8c24-174219c76510') throw new Error('Unexpected characteristic');
+          return telemetry;
         } };
       },
       disconnect: () => { device.gatt.connected = false; device.dispatchEvent(new Event('gattserverdisconnected')); },
@@ -77,8 +56,8 @@ try {
     mock.drop = () => device.gatt.disconnect();
     window.bleMock = mock;
     Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: { requestDevice: async (options) => {
+      if (JSON.stringify(options) !== JSON.stringify({ filters: [{ services: ['a9081000-17c4-4e70-8c24-174219c76510'] }] })) throw new Error('Unexpected device filter');
       mock.selections++;
-      mock.starter = options.filters[0].services[0] === '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
       if (mock.cancelNext) { mock.cancelNext = false; throw new DOMException('Cancelled', 'NotFoundError'); }
       return device;
     } } });
@@ -87,65 +66,62 @@ try {
   await page.goto(url);
   const panel = page.getByRole('region', { name: 'Smart club Bluetooth' });
   const button = (name) => panel.getByRole('button', { name, exact: true });
-  assert.equal(await button('Start stream').isDisabled(), true);
+  const emit = packets => page.evaluate(bytes => window.bleMock.emit(bytes),
+    packets.map(value => [...new Uint8Array(value.buffer, value.byteOffset, value.byteLength)]));
+  const metric = label => panel.locator('.club-readings > div').filter({ has: page.getByText(label, { exact: true }) }).locator('strong');
+  assert.equal(await panel.getByRole('combobox').count(), 0);
+  for (const label of ['Start stream', 'Stop stream', 'Request sample']) assert.equal(await button(label).count(), 0);
   await page.evaluate(() => { window.bleMock.cancelNext = true; });
-  await button('Connect club').click();
-  await panel.getByRole('alert').filter({ hasText: 'No club selected' }).waitFor();
-  await button('Connect club').click();
-  await button('Start stream').waitFor();
-  await button('Start stream').click();
-  await panel.getByText('-0.100 / 0.000 / 1.000', { exact: true }).waitFor();
-  await panel.getByText('Streaming', { exact: true }).waitFor();
-  assert.match(await panel.innerText(), /Demo firmware data/);
-  await button('Stop stream').click();
-  await panel.getByText('Stopped', { exact: true }).waitFor();
-  await button('Request sample').click();
-  assert.deepEqual(await page.evaluate(() => window.bleMock.commands), [1, 2, 3]);
-  await page.evaluate(() => window.bleMock.emit(true));
+  await button('Connect ESP32').click();
+  await panel.getByRole('alert').filter({ hasText: 'No ESP32 selected' }).waitFor();
+  await button('Connect ESP32').click();
+  await panel.getByText(/ESP32 connected. Listening/).waitFor();
+  await panel.getByText('Live telemetry · Waiting for snapshots', { exact: true }).waitFor();
+  await emit(snapshot().slice(0, 2));
+  assert.equal(await metric('Acceleration X / Y / Z (g)').innerText(), '—');
+  await emit(snapshot().slice(2));
+  await panel.getByText('-0.10 / 0.00 / 1.00', { exact: true }).waitFor();
+  assert.equal(await metric('Gyroscope X / Y / Z (°/s)').innerText(), '12.30 / -12.30 / 3276.70');
+  assert.equal(await metric('Complete snapshots').innerText(), '1');
+  await panel.getByText('123.456 kSPS/channel', { exact: true }).waitFor();
+  await panel.getByText('4000000000 / 7', { exact: true }).waitFor();
+  const rows = panel.getByRole('table', { name: 'Strain gauge readings' }).locator('tbody tr');
+  assert.equal(await rows.count(), 8);
+  assert.deepEqual(await rows.first().locator('th, td').allTextContents(), ['AIN1', 'Strain7', '-32768', '-5.0000']);
+  assert.deepEqual(await rows.last().locator('th, td').allTextContents(), ['AIN8', 'Strain2', '16384', '2.5000']);
+  await emit([new DataView(new ArrayBuffer(3))]);
   await panel.getByRole('alert').filter({ hasText: '20-byte' }).waitFor();
-  await page.evaluate(() => window.bleMock.emit());
+  assert.equal(await metric('Invalid packets').innerText(), '1');
+  await emit(snapshot(44));
   await panel.getByRole('alert').waitFor({ state: 'hidden' });
-  await panel.getByText(/Last sample is stale/).waitFor({ timeout: 6000 });
+  assert.equal(await metric('Missing / incomplete observed').innerText(), '1');
+  await panel.getByText('Live telemetry · Stalled', { exact: true }).waitFor({ timeout: 5000 });
+  assert.equal(await metric('Acceleration X / Y / Z (g)').innerText(), '—');
+  assert.deepEqual(await rows.first().locator('th, td').allTextContents(), ['AIN1', 'Strain7', '—', '—']);
+  assert.equal(await metric('Last measured ADC benchmark').innerText(), 'Not available');
+  // Fresh packets with invalid sensor flags must not restore old readings.
+  await emit(snapshot(45, 4));
+  await panel.getByText('Live telemetry · Receiving', { exact: true }).waitFor();
+  assert.equal(await metric('Acceleration X / Y / Z (g)').innerText(), '—');
+  assert.equal(await metric('Gyroscope X / Y / Z (°/s)').innerText(), '12.30 / -12.30 / 3276.70');
+  assert.equal(await rows.first().locator('td').nth(1).innerText(), '—');
   await page.evaluate(() => window.bleMock.drop());
   await panel.getByText(/Connection lost/).waitFor();
-  assert.equal(await button('Start stream').isDisabled(), true);
-  await button('Reconnect club').click();
-  await button('Request sample').click();
+  assert.equal(await panel.getByRole('table').count(), 0);
+  await button('Reconnect ESP32').click();
+  await panel.getByText(/ESP32 connected. Listening/).waitFor();
+  await emit(snapshot(0));
+  await panel.getByText('-0.10 / 0.00 / 1.00', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => window.bleMock.selections), 2);
-  assert.equal(await panel.getByText('1 / 0', { exact: true }).count(), 1);
+  assert.equal(await metric('Complete snapshots').innerText(), '1');
+  assert.equal(await metric('Invalid packets').innerText(), '0');
   await page.screenshot({ path: '.camera-check.local/bluetooth-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 375, height: 812 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.screenshot({ path: '.camera-check.local/bluetooth-mobile.png', fullPage: true });
-  await button('Disconnect club').click();
-  await panel.getByText('Club disconnected.', { exact: true }).waitFor();
+  await button('Disconnect ESP32').click();
+  await panel.getByText('ESP32 disconnected.', { exact: true }).waitFor();
   assert.equal(await panel.getByText('Live telemetry', { exact: false }).count(), 0);
-
-  await panel.getByLabel('Device firmware').selectOption('adxl345');
-  assert.equal(await button('Reconnect club').count(), 0);
-  assert.equal(await button('Start stream').count(), 0);
-  await button('Connect club').click();
-  await panel.getByText(/Starter server connected/).waitFor();
-  assert.equal(await panel.getByLabel('Device firmware').isDisabled(), true);
-  await page.evaluate(() => window.bleMock.emitText('X:1,Y:2,Z:3'));
-  await panel.getByText('X:1,Y:2,Z:3', { exact: true }).waitFor();
-  await panel.getByText('58 3a 31 2c 59 3a 32 2c 5a 3a 33', { exact: true }).waitFor();
-  assert.equal(await panel.getByText('Gyroscope X / Y / Z (°/s)', { exact: true }).count(), 0);
-  await page.evaluate(() => window.bleMock.emitText('<script>alert(1)</script>' + 'x'.repeat(300)));
-  await panel.getByText(/<script>alert\(1\)<\/script>/).waitFor();
-  assert.equal(await panel.locator('script').count(), 0);
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  await page.evaluate(() => window.bleMock.drop());
-  await panel.getByText(/Connection lost/).waitFor();
-  await button('Reconnect club').click();
-  await panel.getByText(/Starter server connected/).waitFor();
-  await page.evaluate(() => window.bleMock.emitText('reconnected'));
-  await panel.getByText('reconnected', { exact: true }).waitFor();
-  assert.equal(await panel.getByText('1 / 0', { exact: true }).count(), 1);
-  await page.screenshot({ path: '.camera-check.local/bluetooth-starter-mobile.png', fullPage: true });
-  await button('Disconnect club').click();
-  await panel.getByLabel('Device firmware').selectOption('courseCorrector');
-  assert.equal(await button('Start stream').isDisabled(), true);
 
   const unsupported = await browser.newPage();
   await unsupported.route('**/models/**', (route) => route.abort());
@@ -153,9 +129,9 @@ try {
   await unsupported.addInitScript(() => Object.defineProperty(navigator, 'bluetooth', { value: undefined }));
   await unsupported.goto(url);
   await unsupported.getByText(/Web Bluetooth is unavailable here/).waitFor();
-  assert.equal(await unsupported.getByRole('button', { name: 'Connect club', exact: true }).isDisabled(), true);
+  assert.equal(await unsupported.getByRole('button', { name: 'Connect ESP32', exact: true }).isDisabled(), true);
   assert.deepEqual(errors, []);
-  console.log('PASS: Chrome BLE UI, chooser cancellation, commands, notifications, invalid/stale data, disconnect/reconnect, mobile layout, unsupported browser. GATT is mocked; hardware still needs validation.');
+  console.log('PASS: Chrome BLE UI, single firmware filter, chooser cancellation, snapshot assembly, strain/IMU/benchmark display, invalid/stale/unavailable data, disconnect/reconnect, mobile layout, unsupported browser. GATT is mocked; hardware still needs validation.');
 } finally {
   await browser?.close();
   await new Promise((done) => server.close(done));
